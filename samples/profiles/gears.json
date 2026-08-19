@@ -1,0 +1,16 @@
+{
+  "name": "gears",
+  "description": "Custom profile for gear and precision drivetrain sourcing, balancing quotation competitiveness with dimensional, process and delivery execution risk.",
+  "weights": {
+    "quotation": 0.30,
+    "commercial": 0.15,
+    "vendor_risk": 0.55
+  },
+  "policy": {
+    "commercial_review_threshold": 70,
+    "vendor_review_threshold": 55,
+    "compliance_review_incidents": 1,
+    "compliance_block_incidents": 2,
+    "minimum_auto_score": 80
+  }
+}
