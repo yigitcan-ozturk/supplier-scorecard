@@ -1,24 +1,67 @@
 # supplier-scorecard
 
-A transparent Python CLI and orchestration layer for turning quotation, payment-term and vendor-risk signals into one explainable procurement recommendation.
+A transparent Python CLI and orchestration layer for turning quotation, payment-term and vendor-risk signals into an explainable, policy-aware procurement recommendation.
 
 [![Tests](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml/badge.svg)](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml)
 
-## What v0.5 adds
+## What v0.6 adds
 
-v0.5 adds **explainable decisions** on top of the v0.4 portfolio pipeline. The project now returns not only a score and ranking, but also the reasons behind the result:
+v0.6 adds **procurement policy gates** on top of the score and explainability layers.
 
-- strengths and warning signals for every supplier
-- the primary weighted score driver for every supplier
-- winner vs. runner-up score gap
-- weighted advantages that pushed the winner ahead
-- weighted trade-offs where the winner was weaker
-- a deterministic human-readable `decision_summary`
-- the same explanation structure in JSON for downstream systems
+A supplier can now have a strong numeric score but still be automatically moved to `REVIEW` or `BLOCKED` when a deterministic procurement rule is triggered.
 
-The existing manual, CSV, connected-JSON, single-supplier and portfolio orchestration modes remain supported.
+The result keeps separate fields for:
 
-## Procurement decision pipeline
+- numeric composite score
+- score-based recommendation
+- policy status: `PASS`, `REVIEW`, or `BLOCKED`
+- final decision after policy gates
+- exact rule(s) that triggered
+- automatic-selection eligibility
+
+The score is never hidden or overwritten. Commercial scoring and governance remain separate and auditable.
+
+## Default policy gates
+
+| Rule | Default action |
+| --- | --- |
+| Commercial/payment risk `>= 80` | `REVIEW` |
+| Vendor-risk score `>= 75` | `REVIEW` |
+| Compliance incidents `>= 1` | `REVIEW` |
+| Compliance incidents `>= 3` | `BLOCKED` |
+
+A supplier is **auto-eligible** only when all policy gates return `PASS` and the score-based recommendation is `PREFERRED` or `ACCEPTABLE`.
+
+Suppliers already scoring `REVIEW` or `HIGH RISK` are therefore not automatically recommended even when no additional policy rule fires.
+
+## Portfolio selection behavior
+
+The portfolio still shows the pure score ranking first.
+
+Policy gates are then applied as a separate selection layer:
+
+```text
+score ranking
+     │
+     ▼
+policy gates
+     │
+     ├── PASS    ──> can be auto-selected
+     ├── REVIEW  ──> human review required
+     └── BLOCKED ──> excluded from automatic recommendation
+```
+
+If the top-scoring supplier is under `REVIEW` or `BLOCKED`, the pipeline selects the highest-scoring **auto-eligible** supplier instead.
+
+If no supplier is auto-eligible, `recommended_supplier` is `null` and the decision status becomes:
+
+```text
+NO AUTO-APPROVED SUPPLIER
+```
+
+This prevents a risky supplier from being silently recommended only because its weighted score is high.
+
+## One-command portfolio pipeline
 
 Clone the five repositories side-by-side:
 
@@ -31,186 +74,167 @@ procurement-tools/
 └── supplier-scorecard/
 ```
 
-The orchestration flow is:
-
-```text
-quotation JSONs ─> currency-normalizer ─> rfqdiff ───────────────┐
-                                                                 │
-payment terms ───────────────> payment-terms-parser ─────────────┼─> supplier-scorecard
-                                                                 │
-vendor metrics ──────────────> vendor-risk-engine ───────────────┘
-                                                                 │
-                                                                 ▼
-                                              ranked + explained supplier portfolio
-```
-
-Payment exposure from `payment-terms-parser` is passed automatically to `vendor-risk-engine`, so the same commercial exposure is not entered twice.
-
-## Portfolio mode
-
-Run every supplier in one command:
+Then run:
 
 ```bash
 python pipeline.py samples/procurement-portfolio-input.json
 ```
 
-Example output:
+The orchestration flow is:
 
 ```text
-PROCUREMENT PORTFOLIO PIPELINE v0.3
-------------------------------------------------------------------------------------
-  # Supplier                          Score     Recommendation
-------------------------------------------------------------------------------------
-  1 Supplier C                        93.00          PREFERRED
-  2 Supplier A                        87.30          PREFERRED
-  3 Supplier B                        49.15          HIGH RISK
-------------------------------------------------------------------------------------
-Recommended supplier : Supplier C
-Suppliers evaluated  : 3
-Target currency      : EUR
-Decision reason      : Supplier C ranks first by 5.70 points over Supplier A,
-                       mainly due to lower commercial/payment risk (+4.00 weighted
-                       points), despite weaker quotation score (-0.45 weighted points).
-Winner advantages    :
-  + lower commercial/payment risk (+4.00 weighted points)
-  + lower vendor risk (+2.15 weighted points)
-Winner tradeoffs     :
-  - weaker quotation score (-0.45 weighted points)
+quotation JSONs -> currency-normalizer -> rfqdiff ------------------┐
+                                                                   │
+payment terms -> payment-terms-parser ------------------------------┼-> supplier-scorecard
+                                                                   │
+vendor metrics -> vendor-risk-engine -------------------------------┘
+                                                                   │
+                                                                   ▼
+                                                            policy gates
+                                                                   │
+                                                                   ▼
+                                                      final supplier decision
 ```
 
-This explanation is calculated from the same weighted score contributions used for the ranking; it is not generated by a language model.
+`payment-terms-parser` supplies pre-delivery exposure directly to `vendor-risk-engine`, so the same commercial exposure is not entered twice.
 
-## Supplier-level explanations
+## Example policy-aware output
 
-Every supplier score now includes an `explanation` object. Example:
-
-```json
-{
-  "supplier": "Supplier A",
-  "score": 90.4,
-  "recommendation": "PREFERRED",
-  "explanation": {
-    "summary": "Supplier A is PREFERRED at 90.40/100, supported by strong quotation competitiveness (92/100).",
-    "strengths": [
-      "Strong quotation competitiveness (92/100).",
-      "Low commercial/payment exposure (10/100 risk).",
-      "Low vendor risk (12/100 risk)."
-    ],
-    "warnings": [],
-    "primary_driver": {
-      "component": "quotation",
-      "weighted_points": 46.0
-    }
-  }
-}
+```text
+PROCUREMENT PORTFOLIO PIPELINE v0.4
+--------------------------------------------------------------------------------------------------------------------
+  # Supplier                        Score   Score rec.     Policy        Final
+--------------------------------------------------------------------------------------------------------------------
+  1 Supplier B                     97.35    PREFERRED     REVIEW       REVIEW
+  2 Supplier A                     93.62    PREFERRED       PASS    PREFERRED
+--------------------------------------------------------------------------------------------------------------------
+Top-scoring supplier : Supplier B
+Recommended supplier : Supplier A
+Decision status      : AUTO-RECOMMENDED
 ```
 
-Threshold-based explanations are explicit and deterministic:
+The numeric ranking is preserved, but the automatic recommendation respects policy.
 
-- quotation score `>= 85` → strength; `< 60` → warning
-- commercial risk `<= 20` → strength; `>= 60` → warning
-- vendor risk `<= 25` → strength; `>= 50` → warning
+## Custom policy
 
-## Portfolio explanation contract
-
-Portfolio JSON contains an additional top-level `explanation` object:
-
-```json
-{
-  "winner": "Supplier C",
-  "runner_up": "Supplier A",
-  "score_gap": 5.7,
-  "advantages": [
-    {
-      "component": "commercial",
-      "weighted_point_delta": 4.0,
-      "reason": "lower commercial/payment risk (+4.00 weighted points)"
-    }
-  ],
-  "tradeoffs": [
-    {
-      "component": "quotation",
-      "weighted_point_delta": -0.45,
-      "reason": "weaker quotation score (-0.45 weighted points)"
-    }
-  ],
-  "summary": "Supplier C ranks first by 5.70 points over Supplier A ..."
-}
-```
-
-This makes the final recommendation auditable by procurement teams and reusable by dashboards, workflow tools or ERP integrations.
-
-## Portfolio input
-
-Portfolio mode uses one quotation per supplier plus one risk profile per supplier:
+Add an optional top-level `policy` object to a single-supplier or portfolio input:
 
 ```json
 {
   "target_currency": "EUR",
-  "quotes": [
-    {
-      "name": "Supplier A",
-      "currency": "EUR",
-      "price": 84200,
-      "lead_time_weeks": 8,
-      "payment_days": 30
-    }
-  ],
-  "supplier_profiles": [
-    {
-      "supplier": "Supplier A",
-      "payment_terms": "20% advance, 80% after delivery",
-      "vendor_risk": {
-        "on_time_delivery": 92,
-        "defect_rate": 1.5,
-        "compliance_incidents": 0,
-        "dependency_share": 30
-      }
-    }
-  ]
+  "policy": {
+    "commercial_review_threshold": 85,
+    "vendor_review_threshold": 80,
+    "compliance_review_incidents": 2,
+    "compliance_block_incidents": 4
+  },
+  "quotes": [],
+  "supplier_profiles": []
 }
 ```
 
-At least two quotations are required. Every quotation supplier must have exactly one matching `supplier_profiles` entry. Duplicate or missing suppliers are rejected rather than silently combined.
+Supported fields:
 
-## One-supplier pipeline
+| Field | Default |
+| --- | ---: |
+| `commercial_review_threshold` | 80 |
+| `vendor_review_threshold` | 75 |
+| `compliance_review_incidents` | 1 |
+| `compliance_block_incidents` | 3 |
 
-The unified single-supplier input still works:
+Commercial and vendor-risk thresholds must be between 0 and 100. Compliance thresholds must be non-negative integers, and the review threshold cannot exceed the block threshold. Unknown policy fields are rejected.
+
+## Policy-gate sample
+
+The repository includes a sample where the highest-scoring supplier is put under policy review and the next compliant supplier is selected:
 
 ```bash
-python pipeline.py samples/procurement-input.json
+python pipeline.py samples/procurement-policy-input.json
 ```
 
-Single-supplier output also includes the supplier-level decision explanation.
+## Explainable decisions
 
-## Keep audit artifacts
+The v0.5 explainability layer remains intact.
 
-By default, intermediate files are temporary. Keep them for review with:
+Each supplier result includes:
 
-```bash
-python pipeline.py samples/procurement-portfolio-input.json \
-  --work-dir pipeline-output
-```
+- strengths
+- warnings
+- primary weighted score driver
+- score-based recommendation
+- policy trigger reasons
+- final decision
 
-The work directory contains normalized quotations, one shared `rfq.json`, and separate payment/vendor-risk artifacts for each supplier.
+Portfolio output keeps the score-based winner-vs-runner-up explanation separately from the policy-selection explanation.
+
+That means downstream systems can answer both:
+
+> Why did this supplier score highest?
+
+and:
+
+> Why was a different supplier actually recommended?
 
 ## JSON output
 
 ```bash
-python pipeline.py samples/procurement-portfolio-input.json \
+python pipeline.py samples/procurement-policy-input.json \
   --json \
-  --output portfolio-scorecard.json
+  --output final-decision.json
 ```
 
-The portfolio JSON contains:
+Important portfolio fields include:
 
-- `recommended_supplier`
-- `supplier_count`
-- `target_currency`
-- ranked `suppliers`
-- supplier-level explanations
-- portfolio winner-vs-runner-up explanation
-- orchestration provenance and artifact paths
+```json
+{
+  "top_scoring_supplier": "Supplier B",
+  "recommended_supplier": "Supplier A",
+  "decision_status": "AUTO-RECOMMENDED",
+  "policy_decision": {
+    "status": "AUTO-RECOMMENDED",
+    "summary": "..."
+  }
+}
+```
+
+Each supplier also contains its score recommendation, `policy`, `final_decision`, explanation and upstream source metadata.
+
+## Direct scorecard modes
+
+Manual mode:
+
+```bash
+python main.py "Supplier A" \
+  --quotation-score 92 \
+  --commercial-risk 10 \
+  --vendor-risk 12
+```
+
+Connected upstream JSON mode:
+
+```bash
+python main.py "Supplier A" \
+  --rfq-json rfq.json \
+  --payment-json payment.json \
+  --vendor-risk-json vendor-risk.json
+```
+
+CSV mode:
+
+```bash
+python main.py --csv samples/suppliers.csv
+```
+
+Direct modes enforce commercial-risk and vendor-risk gates. Compliance gates are applied by the orchestration pipeline because compliance incidents come from the raw vendor profile.
+
+## Keep audit artifacts
+
+```bash
+python pipeline.py samples/procurement-policy-input.json \
+  --work-dir pipeline-output
+```
+
+The work directory keeps normalized quotations, the shared `rfq.json`, supplier payment-analysis JSON and supplier vendor-risk JSON.
 
 ## Composite scoring model
 
@@ -220,48 +244,24 @@ The portfolio JSON contains:
 | Commercial | `100 - commercial risk` | 20% |
 | Vendor risk | `100 - vendor risk` | 30% |
 
-Recommendations:
+Score recommendations:
 
 | Composite score | Recommendation |
 | ---: | --- |
-| 80–100 | PREFERRED |
-| 65–79.99 | ACCEPTABLE |
-| 50–64.99 | REVIEW |
-| 0–49.99 | HIGH RISK |
+| 80–100 | `PREFERRED` |
+| 65–79.99 | `ACCEPTABLE` |
+| 50–64.99 | `REVIEW` |
+| 0–49.99 | `HIGH RISK` |
 
-## Direct scorecard modes
-
-Manual scoring:
-
-```bash
-python main.py "Supplier A" \
-  --quotation-score 92 \
-  --commercial-risk 10 \
-  --vendor-risk 12
-```
-
-Connected JSON mode:
-
-```bash
-python main.py "Supplier A" \
-  --rfq-json rfq.json \
-  --payment-json payment.json \
-  --vendor-risk-json vendor-risk.json
-```
-
-CSV portfolio scoring:
-
-```bash
-python main.py --csv samples/suppliers.csv
-```
-
-All three modes now include explainability data.
+Policy gates are evaluated **after** the score calculation.
 
 ## Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+The suite covers composite scoring, JSON/CSV ingestion, explainable decision reasons, default/custom policies, commercial and vendor-risk review gates, compliance review/block gates, automatic-selection eligibility, blocked supplier exclusion and no-auto-approved-supplier behavior.
 
 GitHub Actions runs the suite on Python 3.11, 3.12 and 3.13.
 
@@ -273,19 +273,22 @@ GitHub Actions runs the suite on Python 3.11, 3.12 and 3.13.
 | [`rfqdiff`](https://github.com/yigitcan-ozturk/rfqdiff) | Compare and score quotations |
 | [`payment-terms-parser`](https://github.com/yigitcan-ozturk/payment-terms-parser) | Convert payment terms into commercial-risk signals |
 | [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score delivery, quality, commercial, compliance and dependency risk |
-| **[`supplier-scorecard`](https://github.com/yigitcan-ozturk/supplier-scorecard)** | Orchestrate, rank and explain supplier decisions |
+| **[`supplier-scorecard`](https://github.com/yigitcan-ozturk/supplier-scorecard)** | Orchestrate, explain, govern and rank supplier decisions |
 
 ## Roadmap
 
 - Configurable scorecard weights
-- Export ranked portfolio results to CSV
+- Policy profiles by category / sourcing strategy
+- CSV export of integrated portfolio decisions
 - Historical supplier trend scoring
-- Technical-compliance scoring alongside commercial scoring
-- Policy-based decision gates such as mandatory compliance thresholds
+- Technical-compliance scoring
+- Approval workflow / procurement sign-off states
 
 ## Status
 
-Current version: **v0.5**. The project supports end-to-end single-supplier and portfolio orchestration with deterministic, inspectable scoring and decision explanations.
+Current version: **v0.6**.
+
+The project now separates **score**, **explanation**, and **policy governance** into three inspectable decision layers.
 
 ## License
 
