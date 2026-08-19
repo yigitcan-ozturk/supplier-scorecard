@@ -1,0 +1,42 @@
+{
+  "profile_file": "profiles/marble-sourcing.json",
+  "target_currency": "EUR",
+  "quotes": [
+    {
+      "name": "Supplier A",
+      "currency": "EUR",
+      "price": 84200,
+      "lead_time_weeks": 8,
+      "payment_days": 30
+    },
+    {
+      "name": "Supplier B",
+      "currency": "EUR",
+      "price": 79400,
+      "lead_time_weeks": 14,
+      "payment_days": 45
+    }
+  ],
+  "supplier_profiles": [
+    {
+      "supplier": "Supplier A",
+      "payment_terms": "20% advance, 80% after delivery",
+      "vendor_risk": {
+        "on_time_delivery": 92,
+        "defect_rate": 1.5,
+        "compliance_incidents": 0,
+        "dependency_share": 30
+      }
+    },
+    {
+      "supplier": "Supplier B",
+      "payment_terms": "Net 45 days",
+      "vendor_risk": {
+        "on_time_delivery": 84,
+        "defect_rate": 3,
+        "compliance_incidents": 1,
+        "dependency_share": 55
+      }
+    }
+  ]
+}
