@@ -1,16 +1,16 @@
 # supplier-scorecard
 
-A transparent Python CLI and orchestration layer for turning quotation, payment-term and vendor-risk signals into one composite supplier recommendation.
+A transparent Python CLI and orchestration layer for turning quotation, payment-term and vendor-risk signals into one procurement recommendation.
 
 [![Tests](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml/badge.svg)](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml)
 
-## Why supplier-scorecard
+## What v0.4 adds
 
-Procurement decisions rarely depend on quotation price and terms alone. A supplier can have a strong commercial offer while still carrying high payment exposure or operational, quality, compliance and dependency risk.
+v0.4 adds **portfolio orchestration**. A single pipeline input can now describe every supplier in an RFQ. The pipeline normalizes quotation currencies, runs the quotation comparison once, evaluates payment and vendor risk for every supplier, builds a composite scorecard for each supplier, ranks the portfolio and returns the recommended supplier.
 
-`supplier-scorecard` is the integration layer for the procurement-tooling suite. v0.3 keeps the existing manual, CSV and upstream-JSON modes and adds **single-command orchestration** across the sibling repositories.
+The existing manual, CSV, connected-JSON and single-supplier orchestration modes remain supported.
 
-## One-command procurement pipeline
+## Procurement decision pipeline
 
 Clone the five repositories side-by-side:
 
@@ -23,56 +23,59 @@ procurement-tools/
 └── supplier-scorecard/
 ```
 
-Then run from `supplier-scorecard`:
+The orchestration flow is:
+
+```text
+quotation JSONs ─> currency-normalizer ─> rfqdiff ───────────────┐
+                                                                 │
+payment terms ───────────────> payment-terms-parser ─────────────┼─> supplier-scorecard
+                                                                 │
+vendor metrics ──────────────> vendor-risk-engine ───────────────┘
+                                                                 │
+                                                                 ▼
+                                                       ranked supplier portfolio
+```
+
+Payment exposure from `payment-terms-parser` is passed automatically to `vendor-risk-engine`, so the same commercial exposure is not entered twice.
+
+## One supplier
+
+The v0.3 unified input still works:
 
 ```bash
 python pipeline.py samples/procurement-input.json
 ```
 
-That one command executes:
+## Portfolio mode
 
-```text
-quotation JSON
-      │
-      ▼
-currency-normalizer
-      │
-      ▼
-    rfqdiff ─────────────────────────────┐
-                                         │
-payment terms ─> payment-terms-parser ──┼─> supplier-scorecard
-                                         │
-vendor metrics ─> vendor-risk-engine ───┘
+Run every supplier in one command:
+
+```bash
+python pipeline.py samples/procurement-portfolio-input.json
 ```
 
-`payment-terms-parser` automatically supplies pre-delivery payment exposure to `vendor-risk-engine`, so that commercial-risk value does not have to be entered twice.
-
-Example output:
+Example output format:
 
 ```text
-PROCUREMENT DECISION PIPELINE v0.1
-----------------------------------------------------------
-Supplier             : Supplier A
-Composite score      : <score> / 100
-Recommendation       : <recommendation>
+PROCUREMENT PORTFOLIO PIPELINE v0.2
+------------------------------------------------------------------------------------
+  # Supplier                          Score     Recommendation
+------------------------------------------------------------------------------------
+  1 Supplier C                        93.00          PREFERRED
+  2 Supplier A                        87.31          PREFERRED
+  3 Supplier B                        49.15          HIGH RISK
+------------------------------------------------------------------------------------
+Recommended supplier : Supplier C
+Suppliers evaluated  : 3
 Target currency      : EUR
-
-Pipeline
-----------------------------------------------------------
-currency-normalizer  : completed
-rfqdiff              : completed
-payment-terms-parser : completed
-vendor-risk-engine   : completed
-supplier-scorecard   : completed
 ```
 
-### Unified input
+## Portfolio input
 
-The pipeline takes one JSON file:
+Portfolio mode uses one quotation per supplier plus one risk profile per supplier:
 
 ```json
 {
-  "supplier": "Supplier A",
   "target_currency": "EUR",
   "quotes": [
     {
@@ -81,64 +84,54 @@ The pipeline takes one JSON file:
       "price": 84200,
       "lead_time_weeks": 8,
       "payment_days": 30
-    },
-    {
-      "name": "Supplier B",
-      "currency": "EUR",
-      "price": 79400,
-      "lead_time_weeks": 14,
-      "payment_days": 0
     }
   ],
-  "payment_terms": "20% advance, 80% after delivery",
-  "vendor_risk": {
-    "on_time_delivery": 92,
-    "defect_rate": 1.5,
-    "compliance_incidents": 0,
-    "dependency_share": 30
-  }
+  "supplier_profiles": [
+    {
+      "supplier": "Supplier A",
+      "payment_terms": "20% advance, 80% after delivery",
+      "vendor_risk": {
+        "on_time_delivery": 92,
+        "defect_rate": 1.5,
+        "compliance_incidents": 0,
+        "dependency_share": 30
+      }
+    }
+  ]
 }
 ```
 
-The target supplier must appear in the quotation set. At least two quotations are required because `rfqdiff` scores suppliers comparatively.
+At least two quotations are required. Every quotation supplier must have exactly one matching `supplier_profiles` entry. Duplicate or missing suppliers are rejected rather than silently combined.
 
-### Keep intermediate artifacts
+## Keep audit artifacts
 
-By default, intermediate JSON files are temporary. Keep them for audit/review with:
+By default, intermediate files are temporary. Keep them for review with:
 
 ```bash
-python pipeline.py samples/procurement-input.json \
+python pipeline.py samples/procurement-portfolio-input.json \
   --work-dir pipeline-output
 ```
 
-This preserves:
+The work directory contains the normalized quotations, one shared `rfq.json`, and separate payment/vendor-risk artifacts for each supplier.
 
-```text
-pipeline-output/
-├── quote-1-raw.json
-├── quote-1-normalized.json
-├── quote-2-raw.json
-├── quote-2-normalized.json
-├── rfq.json
-├── payment.json
-└── vendor-risk.json
-```
-
-Write the final scorecard to JSON:
+## JSON output
 
 ```bash
-python pipeline.py samples/procurement-input.json \
-  --output final-scorecard.json \
-  --json
+python pipeline.py samples/procurement-portfolio-input.json \
+  --json \
+  --output portfolio-scorecard.json
 ```
 
-If the repositories are not side-by-side, point to the directory containing the upstream repositories:
+The portfolio JSON contains:
 
-```bash
-python pipeline.py input.json --tools-root /path/to/procurement-tools
-```
+- `recommended_supplier`
+- `supplier_count`
+- `target_currency`
+- ranked `suppliers`
+- each supplier's composite score and recommendation
+- orchestration provenance and artifact paths
 
-## Scoring model
+## Composite scoring model
 
 | Component | Input | Weight |
 | --- | --- | ---: |
@@ -146,7 +139,7 @@ python pipeline.py input.json --tools-root /path/to/procurement-tools
 | Commercial | `100 - commercial risk` | 20% |
 | Vendor risk | `100 - vendor risk` | 30% |
 
-Recommendation thresholds:
+Recommendations:
 
 | Composite score | Recommendation |
 | ---: | --- |
@@ -155,9 +148,9 @@ Recommendation thresholds:
 | 50–64.99 | REVIEW |
 | 0–49.99 | HIGH RISK |
 
-## Existing modes
+## Direct scorecard modes
 
-Single-supplier manual scoring remains supported:
+Manual scoring remains available:
 
 ```bash
 python main.py "Supplier A" \
@@ -166,40 +159,20 @@ python main.py "Supplier A" \
   --vendor-risk 12
 ```
 
-Direct upstream JSON ingestion remains supported:
+Connected JSON mode remains available:
 
 ```bash
 python main.py "Supplier A" \
-  --rfq-json samples/pipeline/rfq.json \
-  --payment-json samples/pipeline/payment.json \
-  --vendor-risk-json samples/pipeline/vendor-risk.json
+  --rfq-json rfq.json \
+  --payment-json payment.json \
+  --vendor-risk-json vendor-risk.json
 ```
 
-CSV portfolio scoring remains supported:
+CSV portfolio scoring remains available:
 
 ```bash
 python main.py --csv samples/suppliers.csv
 ```
-
-## Integration contracts
-
-`supplier-scorecard` expects:
-
-- `rfqdiff`: a JSON object containing a `suppliers` list with supplier `name` and `score`
-- `payment-terms-parser`: `commercial_risk` or `buyer_exposure`, optionally with `supplier`
-- `vendor-risk-engine`: a single result object with `vendor` + `score`, or a batch list containing matching vendor records
-
-Supplier matching is case-insensitive. Conflicting supplier names are rejected instead of silently combining unrelated data.
-
-## Procurement tooling suite
-
-| Tool | Role |
-| --- | --- |
-| [`currency-normalizer`](https://github.com/yigitcan-ozturk/currency-normalizer) | Normalize quotation values across currencies |
-| [`rfqdiff`](https://github.com/yigitcan-ozturk/rfqdiff) | Compare and score normalized quotations |
-| [`payment-terms-parser`](https://github.com/yigitcan-ozturk/payment-terms-parser) | Convert payment terms into commercial-risk signals |
-| [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score operational, quality, compliance and dependency risk |
-| **[`supplier-scorecard`](https://github.com/yigitcan-ozturk/supplier-scorecard)** | Orchestrate the tools and produce the final supplier recommendation |
 
 ## Tests
 
@@ -207,20 +180,29 @@ Supplier matching is case-insensitive. Conflicting supplier names are rejected i
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs the same suite automatically on Python 3.11, 3.12 and 3.13.
+GitHub Actions runs the suite on Python 3.11, 3.12 and 3.13.
+
+## Procurement tooling suite
+
+| Tool | Role |
+| --- | --- |
+| [`currency-normalizer`](https://github.com/yigitcan-ozturk/currency-normalizer) | Normalize quotation currencies |
+| [`rfqdiff`](https://github.com/yigitcan-ozturk/rfqdiff) | Compare and score quotations |
+| [`payment-terms-parser`](https://github.com/yigitcan-ozturk/payment-terms-parser) | Convert payment terms into commercial-risk signals |
+| [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score delivery, quality, commercial, compliance and dependency risk |
+| **[`supplier-scorecard`](https://github.com/yigitcan-ozturk/supplier-scorecard)** | Orchestrate the suite and rank suppliers |
 
 ## Roadmap
 
-- Pipeline portfolio mode across many suppliers
 - Configurable scorecard weights
-- CSV/JSON export of integrated portfolio scorecards
-- Explainable warning flags and hard-stop rules
+- Export ranked portfolio results to CSV
+- Explainable warning flags and decision reasons
 - Historical supplier trend scoring
-- Optional package/installer for easier multi-repo setup
+- Technical-compliance scoring alongside commercial scoring
 
 ## Status
 
-Early-stage project, currently at **v0.3**. This version adds one-command orchestration across the procurement-tooling repositories while preserving the explicit scoring contracts and reviewable intermediate outputs.
+Current version: **v0.4**. The project supports single-supplier and portfolio-level end-to-end procurement orchestration while keeping every scoring step deterministic and inspectable.
 
 ## License
 
