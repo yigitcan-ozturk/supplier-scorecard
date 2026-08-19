@@ -118,8 +118,8 @@ class PipelineTests(unittest.TestCase):
         payload = self.payload(); payload["category_profile"] = "critical-machining"
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_case(payload, Path(tmp))
-        self.assertEqual(result["version"], "0.6")
-        self.assertEqual(result["orchestration"]["version"], "0.7")
+        self.assertEqual(result["version"], "1.0")
+        self.assertEqual(result["orchestration"]["version"], "1.0")
         self.assertEqual(result["category_profile"], "critical-machining")
         self.assertEqual(result["profile"]["weights"]["vendor_risk"], .385)
         self.assertEqual(result["profile"]["weights"]["technical"], .30)
