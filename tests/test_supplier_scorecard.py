@@ -26,7 +26,7 @@ from main import (
 class ScoreTests(unittest.TestCase):
     def test_default_score(self):
         result = score_supplier("A", 92, 10, 12)
-        self.assertEqual(result["version"], "0.9")
+        self.assertEqual(result["version"], "1.0")
         self.assertAlmostEqual(result["score"], 90.4)
         self.assertEqual(result["final_decision"], "PREFERRED")
 
