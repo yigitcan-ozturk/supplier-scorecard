@@ -87,58 +87,48 @@ class PipelineTests(unittest.TestCase):
         pipeline.validate_input(self.payload())
 
     def test_missing_profile_for_quote(self):
-        payload = self.payload()
-        payload["supplier_profiles"].pop()
+        payload = self.payload(); payload["supplier_profiles"].pop()
         with self.assertRaises(ValueError):
             pipeline.validate_input(payload)
 
     def test_relative_profile_path(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "profiles").mkdir()
-            profile = root / "profiles" / "marble.json"
-            profile.write_text(json.dumps(self.profile_payload()))
-            payload = self.payload()
-            payload["profile_file"] = "profiles/marble.json"
-            input_path = root / "input.json"
-            input_path.write_text(json.dumps(payload))
+            root = Path(tmp); (root/"profiles").mkdir()
+            profile = root/"profiles"/"marble.json"; profile.write_text(json.dumps(self.profile_payload()))
+            payload = self.payload(); payload["profile_file"] = "profiles/marble.json"
+            input_path = root/"input.json"; input_path.write_text(json.dumps(payload))
             loaded = pipeline.load_input(input_path)
         self.assertEqual(loaded["profile_file"], str(profile.resolve()))
 
     def test_cli_profile_override_removes_builtin(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            profile = self.write_profile(root)
-            payload = self.payload()
-            payload["category_profile"] = "office-supplies"
-            input_path = root / "input.json"
-            input_path.write_text(json.dumps(payload))
+            root = Path(tmp); profile = self.write_profile(root)
+            payload = self.payload(); payload["category_profile"] = "office-supplies"
+            input_path = root/"input.json"; input_path.write_text(json.dumps(payload))
             loaded = pipeline.load_input(input_path, profile_file=profile)
         self.assertNotIn("category_profile", loaded)
 
     def test_builtin_and_file_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
-            payload = self.payload()
-            payload["category_profile"] = "critical-machining"
-            payload["profile_file"] = str(self.write_profile(tmp))
+            payload = self.payload(); payload["category_profile"] = "critical-machining"; payload["profile_file"] = str(self.write_profile(tmp))
             with self.assertRaises(ValueError):
                 pipeline.validate_input(payload)
 
     def test_builtin_profile_pipeline(self):
-        payload = self.payload()
-        payload["category_profile"] = "critical-machining"
+        payload = self.payload(); payload["category_profile"] = "critical-machining"
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_case(payload, Path(tmp))
-        self.assertEqual(result["version"], "0.5")
-        self.assertEqual(result["orchestration"]["version"], "0.6")
+        self.assertEqual(result["version"], "0.6")
+        self.assertEqual(result["orchestration"]["version"], "0.7")
         self.assertEqual(result["category_profile"], "critical-machining")
-        self.assertEqual(result["profile"]["weights"]["vendor_risk"], .55)
+        self.assertEqual(result["profile"]["weights"]["vendor_risk"], .385)
+        self.assertEqual(result["profile"]["weights"]["technical"], .30)
+        self.assertEqual(result["suppliers"][0]["scoring_mode"], "legacy-3-component")
 
     def test_custom_profile_pipeline(self):
         payload = self.payload()
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            payload["profile_file"] = str(self.write_profile(root))
+            root = Path(tmp); payload["profile_file"] = str(self.write_profile(root))
             result = self.run_case(payload, root)
         self.assertEqual(result["category_profile"], "marble-sourcing")
         self.assertEqual(result["profile"]["source"]["type"], "file")
@@ -148,9 +138,7 @@ class PipelineTests(unittest.TestCase):
     def test_custom_profile_policy_override(self):
         payload = self.payload()
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            payload["profile_file"] = str(self.write_profile(root))
-            payload["policy"] = {"vendor_review_threshold": 70}
+            root = Path(tmp); payload["profile_file"] = str(self.write_profile(root)); payload["policy"] = {"vendor_review_threshold": 70}
             result = self.run_case(payload, root)
         self.assertEqual(result["policy"]["vendor_review_threshold"], 70)
         self.assertEqual(result["profile"]["weights"]["vendor_risk"], .45)
@@ -161,6 +149,36 @@ class PipelineTests(unittest.TestCase):
             result = self.run_case(payload, Path(tmp))
         self.assertEqual(result["recommended_supplier"], "Supplier A")
         self.assertIn(result["decision_status"], {"AUTO-RECOMMENDED", "NO AUTO-APPROVED SUPPLIER"})
+
+    def test_portfolio_technical_compliance_is_scored_per_supplier(self):
+        payload = self.payload()
+        payload["category_profile"] = "critical-machining"
+        payload["supplier_profiles"][0]["technical_compliance"] = 95
+        payload["supplier_profiles"][1]["technical_compliance"] = 60
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_case(payload, Path(tmp))
+        by_name = {item["supplier"]: item for item in result["suppliers"]}
+        self.assertEqual(by_name["Supplier A"]["scoring_mode"], "4-component")
+        self.assertEqual(by_name["Supplier A"]["inputs"]["technical_compliance"], 95)
+        self.assertEqual(by_name["Supplier B"]["inputs"]["technical_compliance"], 60)
+        self.assertEqual(by_name["Supplier A"]["weights"]["technical"], .30)
+
+    def test_pipeline_rejects_invalid_technical_score(self):
+        payload = self.payload()
+        payload["supplier_profiles"][0]["technical_compliance"] = 120
+        with self.assertRaises(ValueError):
+            pipeline.validate_input(payload)
+
+    def test_pipeline_allows_mixed_technical_availability(self):
+        payload = self.payload()
+        payload["category_profile"] = "critical-machining"
+        payload["supplier_profiles"][0]["technical_compliance"] = 90
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_case(payload, Path(tmp))
+        by_name = {item["supplier"]: item for item in result["suppliers"]}
+        self.assertEqual(by_name["Supplier A"]["scoring_mode"], "4-component")
+        self.assertEqual(by_name["Supplier B"]["scoring_mode"], "legacy-3-component")
+        self.assertAlmostEqual(by_name["Supplier B"]["weights"]["vendor_risk"], .55)
 
 
 if __name__ == "__main__":
