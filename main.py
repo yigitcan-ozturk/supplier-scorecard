@@ -3,9 +3,16 @@ import csv
 import json
 from pathlib import Path
 
-VERSION = "0.4"
+VERSION = "0.5"
 WEIGHTS = {"quotation": 0.50, "commercial": 0.20, "vendor_risk": 0.30}
 CSV_COLUMNS = ("supplier", "quotation_score", "commercial_risk", "vendor_risk")
+
+
+COMPONENT_LABELS = {
+    "quotation": "quotation competitiveness",
+    "commercial": "commercial/payment risk",
+    "vendor_risk": "vendor risk",
+}
 
 
 def validate_score(name, value):
@@ -23,6 +30,190 @@ def recommendation(score):
     if score >= 50:
         return "REVIEW"
     return "HIGH RISK"
+
+
+def _format_number(value):
+    value = float(value)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def explain_supplier(result):
+    """Build deterministic, machine-readable reasons for one supplier score."""
+    inputs = result["inputs"]
+    components = result["components"]
+    weighted = result["weighted"]
+
+    strengths = []
+    warnings = []
+
+    quotation_score = inputs["quotation_score"]
+    commercial_risk = inputs["commercial_risk"]
+    vendor_risk = inputs["vendor_risk"]
+
+    if quotation_score >= 85:
+        strengths.append(
+            f"Strong quotation competitiveness ({_format_number(quotation_score)}/100)."
+        )
+    elif quotation_score < 60:
+        warnings.append(
+            f"Weak quotation competitiveness ({_format_number(quotation_score)}/100)."
+        )
+
+    if commercial_risk <= 20:
+        strengths.append(
+            f"Low commercial/payment exposure ({_format_number(commercial_risk)}/100 risk)."
+        )
+    elif commercial_risk >= 60:
+        warnings.append(
+            f"High commercial/payment exposure ({_format_number(commercial_risk)}/100 risk)."
+        )
+
+    if vendor_risk <= 25:
+        strengths.append(
+            f"Low vendor risk ({_format_number(vendor_risk)}/100 risk)."
+        )
+    elif vendor_risk >= 50:
+        warnings.append(
+            f"Elevated vendor risk ({_format_number(vendor_risk)}/100 risk)."
+        )
+
+    primary_component = max(weighted, key=weighted.get)
+    primary_driver = {
+        "component": primary_component,
+        "label": COMPONENT_LABELS[primary_component],
+        "component_score": round(float(components[primary_component]), 2),
+        "weighted_points": round(float(weighted[primary_component]), 2),
+    }
+
+    if strengths and warnings:
+        summary = (
+            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100; "
+            f"the decision combines {strengths[0].lower()} with {warnings[0].lower()}"
+        )
+    elif strengths:
+        summary = (
+            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100, "
+            f"supported by {strengths[0].lower()}"
+        )
+    elif warnings:
+        summary = (
+            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100, "
+            f"with {warnings[0].lower()}"
+        )
+    else:
+        summary = (
+            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100 "
+            "with no extreme component signal."
+        )
+
+    return {
+        "summary": summary,
+        "strengths": strengths,
+        "warnings": warnings,
+        "primary_driver": primary_driver,
+    }
+
+
+def _comparison_phrase(component, delta):
+    magnitude = abs(float(delta))
+    points = f"{magnitude:.2f} weighted points"
+    if component == "quotation":
+        return (
+            f"stronger quotation score (+{points})"
+            if delta > 0
+            else f"weaker quotation score (-{points})"
+        )
+    if component == "commercial":
+        return (
+            f"lower commercial/payment risk (+{points})"
+            if delta > 0
+            else f"higher commercial/payment risk (-{points})"
+        )
+    return (
+        f"lower vendor risk (+{points})"
+        if delta > 0
+        else f"higher vendor risk (-{points})"
+    )
+
+
+def explain_portfolio(results):
+    """Explain why the top-ranked supplier leads the runner-up."""
+    ranked = rank_results(results)
+    if not ranked:
+        raise ValueError("portfolio explanation requires at least one supplier result.")
+
+    winner = ranked[0]
+    if len(ranked) == 1:
+        return {
+            "winner": winner["supplier"],
+            "runner_up": None,
+            "score_gap": None,
+            "advantages": [],
+            "tradeoffs": [],
+            "summary": (
+                f"{winner['supplier']} is the only evaluated supplier at "
+                f"{winner['score']:.2f}/100."
+            ),
+        }
+
+    runner_up = ranked[1]
+    gap = round(float(winner["score"]) - float(runner_up["score"]), 2)
+    deltas = {
+        component: round(
+            float(winner["weighted"][component])
+            - float(runner_up["weighted"][component]),
+            2,
+        )
+        for component in WEIGHTS
+    }
+
+    advantages = [
+        {
+            "component": component,
+            "weighted_point_delta": delta,
+            "reason": _comparison_phrase(component, delta),
+        }
+        for component, delta in sorted(
+            deltas.items(), key=lambda item: abs(item[1]), reverse=True
+        )
+        if delta > 0.05
+    ]
+    tradeoffs = [
+        {
+            "component": component,
+            "weighted_point_delta": delta,
+            "reason": _comparison_phrase(component, delta),
+        }
+        for component, delta in sorted(
+            deltas.items(), key=lambda item: abs(item[1]), reverse=True
+        )
+        if delta < -0.05
+    ]
+
+    if advantages:
+        summary = (
+            f"{winner['supplier']} ranks first by {gap:.2f} points over "
+            f"{runner_up['supplier']}, mainly due to {advantages[0]['reason']}."
+        )
+    else:
+        summary = (
+            f"{winner['supplier']} ranks first by {gap:.2f} points over "
+            f"{runner_up['supplier']} through small combined advantages."
+        )
+
+    if tradeoffs:
+        summary = summary[:-1] + f", despite {tradeoffs[0]['reason']}."
+
+    return {
+        "winner": winner["supplier"],
+        "runner_up": runner_up["supplier"],
+        "score_gap": gap,
+        "advantages": advantages,
+        "tradeoffs": tradeoffs,
+        "summary": summary,
+    }
 
 
 def score_supplier(supplier, quotation_score, commercial_risk, vendor_risk):
@@ -43,7 +234,7 @@ def score_supplier(supplier, quotation_score, commercial_risk, vendor_risk):
         for name in WEIGHTS
     }
     total = round(sum(weighted.values()), 2)
-    return {
+    result = {
         "tool": "supplier-scorecard",
         "version": VERSION,
         "supplier": supplier,
@@ -58,10 +249,15 @@ def score_supplier(supplier, quotation_score, commercial_risk, vendor_risk):
             "vendor_risk": vendor_risk,
         },
     }
+    result["explanation"] = explain_supplier(result)
+    return result
 
 
 def rank_results(results):
-    return sorted(results, key=lambda item: (-item["score"], item["supplier"].casefold()))
+    return sorted(
+        results,
+        key=lambda item: (-float(item["score"]), str(item["supplier"]).casefold()),
+    )
 
 
 def score_csv(path):
@@ -77,12 +273,14 @@ def score_csv(path):
             if not any((value or "").strip() for value in row.values()):
                 continue
             try:
-                results.append(score_supplier(
-                    row["supplier"],
-                    float(row["quotation_score"]),
-                    float(row["commercial_risk"]),
-                    float(row["vendor_risk"]),
-                ))
+                results.append(
+                    score_supplier(
+                        row["supplier"],
+                        float(row["quotation_score"]),
+                        float(row["commercial_risk"]),
+                        float(row["vendor_risk"]),
+                    )
+                )
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"CSV row {row_number}: {exc}") from exc
     if not results:
@@ -146,7 +344,9 @@ def extract_vendor_risk(payload, supplier):
             name = item.get("vendor", item.get("supplier"))
             if name is not None and _same_supplier(supplier, name):
                 if "score" not in item:
-                    raise ValueError(f"vendor-risk entry for '{supplier}' is missing 'score'.")
+                    raise ValueError(
+                        f"vendor-risk entry for '{supplier}' is missing 'score'."
+                    )
                 return validate_score("vendor risk", item["score"])
         raise ValueError(f"vendor-risk JSON does not contain supplier '{supplier}'.")
     if not isinstance(payload, dict):
@@ -184,39 +384,66 @@ def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json):
         },
         "vendor_risk_engine": {
             "path": str(vendor_risk_json),
-            "tool": (vendor_payload.get("tool") or "vendor-risk-engine") if isinstance(vendor_payload, dict) else "vendor-risk-engine",
+            "tool": (
+                (vendor_payload.get("tool") or "vendor-risk-engine")
+                if isinstance(vendor_payload, dict)
+                else "vendor-risk-engine"
+            ),
             "version": vendor_payload.get("version") if isinstance(vendor_payload, dict) else None,
         },
     }
     return result
 
 
+def print_explanation(explanation, indent=""):
+    print(f"{indent}Decision reason      : {explanation['summary']}")
+    if explanation["strengths"]:
+        print(f"{indent}Strengths            :")
+        for item in explanation["strengths"]:
+            print(f"{indent}  + {item}")
+    if explanation["warnings"]:
+        print(f"{indent}Warnings             :")
+        for item in explanation["warnings"]:
+            print(f"{indent}  - {item}")
+
+
 def print_report(result):
     print()
     print(f"SUPPLIER SCORECARD v{VERSION}")
-    print("-" * 54)
+    print("-" * 72)
     print(f"Supplier             : {result['supplier']}")
     print(f"Composite score      : {result['score']:.2f} / 100")
     print(f"Recommendation       : {result['recommendation']}")
     if "sources" in result:
         print("Pipeline inputs      : connected")
+    print()
+    print_explanation(result["explanation"])
 
 
 def print_batch_report(results):
+    ranked = rank_results(results)
+    portfolio_explanation = explain_portfolio(ranked)
     print()
     print(f"SUPPLIER SCORECARD v{VERSION} - PORTFOLIO")
     print("-" * 82)
     print(f"{'#':>3} {'Supplier':30} {'Score':>8} {'Recommendation':>18}")
     print("-" * 82)
-    for rank, result in enumerate(results, start=1):
-        print(f"{rank:>3} {result['supplier'][:30]:30} {result['score']:8.2f} {result['recommendation']:>18}")
+    for rank, result in enumerate(ranked, start=1):
+        print(
+            f"{rank:>3} {result['supplier'][:30]:30} "
+            f"{result['score']:8.2f} {result['recommendation']:>18}"
+        )
     print("-" * 82)
-    print(f"Recommended supplier : {results[0]['supplier']}")
+    print(f"Recommended supplier : {ranked[0]['supplier']}")
+    print(f"Decision reason      : {portfolio_explanation['summary']}")
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Combine quotation, commercial-risk and vendor-risk signals into a supplier scorecard."
+        description=(
+            "Combine quotation, commercial-risk and vendor-risk signals into an "
+            "explainable supplier scorecard."
+        )
     )
     parser.add_argument("supplier", nargs="?")
     parser.add_argument("--quotation-score", type=float)
@@ -235,7 +462,12 @@ def validate_cli_mode(parser, args):
     pipeline_requested = any(value is not None for value in pipeline_values)
     if args.csv_path:
         if args.supplier or pipeline_requested or any(
-            value is not None for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)
+            value is not None
+            for value in (
+                args.quotation_score,
+                args.commercial_risk,
+                args.vendor_risk,
+            )
         ):
             parser.error("--csv cannot be combined with single-supplier inputs.")
         return "csv"
@@ -243,14 +475,32 @@ def validate_cli_mode(parser, args):
         if not args.supplier:
             parser.error("pipeline mode requires a supplier name.")
         if not all(value is not None for value in pipeline_values):
-            parser.error("pipeline mode requires: --rfq-json, --payment-json, --vendor-risk-json")
-        if any(value is not None for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)):
+            parser.error(
+                "pipeline mode requires: --rfq-json, --payment-json, --vendor-risk-json"
+            )
+        if any(
+            value is not None
+            for value in (
+                args.quotation_score,
+                args.commercial_risk,
+                args.vendor_risk,
+            )
+        ):
             parser.error("pipeline mode cannot be combined with manual score inputs.")
         return "pipeline"
     if not args.supplier:
         parser.error("supplier name is required unless --csv is used.")
-    if any(value is None for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)):
-        parser.error("single-supplier mode requires: --quotation-score, --commercial-risk, --vendor-risk")
+    if any(
+        value is None
+        for value in (
+            args.quotation_score,
+            args.commercial_risk,
+            args.vendor_risk,
+        )
+    ):
+        parser.error(
+            "single-supplier mode requires: --quotation-score, --commercial-risk, --vendor-risk"
+        )
     return "manual"
 
 
@@ -262,9 +512,19 @@ def main():
         if mode == "csv":
             result = score_csv(args.csv_path)
         elif mode == "pipeline":
-            result = score_from_tools(args.supplier, args.rfq_json, args.payment_json, args.vendor_risk_json)
+            result = score_from_tools(
+                args.supplier,
+                args.rfq_json,
+                args.payment_json,
+                args.vendor_risk_json,
+            )
         else:
-            result = score_supplier(args.supplier, args.quotation_score, args.commercial_risk, args.vendor_risk)
+            result = score_supplier(
+                args.supplier,
+                args.quotation_score,
+                args.commercial_risk,
+                args.vendor_risk,
+            )
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
