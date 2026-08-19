@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from main import (
+    explain_portfolio,
     extract_commercial_risk,
     extract_rfq_score,
     extract_vendor_risk,
@@ -20,7 +21,33 @@ class SupplierScorecardTests(unittest.TestCase):
         result = score_supplier("Supplier A", 92, 10, 12)
         self.assertEqual(result["recommendation"], "PREFERRED")
         self.assertAlmostEqual(result["score"], 90.4)
-        self.assertEqual(result["version"], "0.4")
+        self.assertEqual(result["version"], "0.5")
+
+    def test_supplier_explanation_contains_strengths_and_primary_driver(self):
+        result = score_supplier("Strong Supplier", 92, 10, 12)
+        explanation = result["explanation"]
+        self.assertTrue(explanation["strengths"])
+        self.assertEqual(explanation["warnings"], [])
+        self.assertEqual(explanation["primary_driver"]["component"], "quotation")
+        self.assertIn("Strong quotation competitiveness", explanation["strengths"][0])
+
+    def test_supplier_explanation_flags_material_risks(self):
+        result = score_supplier("Risky Supplier", 55, 80, 75)
+        explanation = result["explanation"]
+        self.assertGreaterEqual(len(explanation["warnings"]), 3)
+        self.assertTrue(any("commercial/payment" in item for item in explanation["warnings"]))
+        self.assertTrue(any("vendor risk" in item for item in explanation["warnings"]))
+
+    def test_portfolio_explanation_compares_winner_and_runner_up(self):
+        winner = score_supplier("Winner", 82, 10, 10)
+        runner = score_supplier("Runner", 90, 55, 45)
+        explanation = explain_portfolio([runner, winner])
+        self.assertEqual(explanation["winner"], "Winner")
+        self.assertEqual(explanation["runner_up"], "Runner")
+        self.assertGreater(explanation["score_gap"], 0)
+        self.assertTrue(explanation["advantages"])
+        self.assertTrue(explanation["tradeoffs"])
+        self.assertIn("ranks first", explanation["summary"])
 
     def test_acceptable_supplier(self):
         self.assertEqual(score_supplier("B", 78, 25, 30)["recommendation"], "ACCEPTABLE")
@@ -54,33 +81,27 @@ class SupplierScorecardTests(unittest.TestCase):
         self.assertIn('"supplier": "JSON"', json.dumps(score_supplier("JSON", 80, 20, 20)))
 
     def test_rank_results_highest_first(self):
-        ranked = rank_results([
-            score_supplier("B", 60, 40, 40),
-            score_supplier("A", 90, 10, 10),
-        ])
+        ranked = rank_results([score_supplier("B", 60, 40, 40), score_supplier("A", 90, 10, 10)])
         self.assertEqual(ranked[0]["supplier"], "A")
 
     def test_score_csv_multiple_suppliers(self):
         text = "supplier,quotation_score,commercial_risk,vendor_risk\nA,92,10,12\nB,78,25,30\n"
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "x.csv"
-            path.write_text(text)
+            path = Path(tmp) / "x.csv"; path.write_text(text)
             results = score_csv(path)
         self.assertEqual(results[0]["supplier"], "A")
 
     def test_score_csv_invalid_row_reports_number(self):
         text = "supplier,quotation_score,commercial_risk,vendor_risk\nA,x,10,12\n"
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "x.csv"
-            path.write_text(text)
+            path = Path(tmp) / "x.csv"; path.write_text(text)
             with self.assertRaisesRegex(ValueError, "CSV row 2"):
                 score_csv(path)
 
     def test_score_csv_missing_column(self):
         text = "supplier,quotation_score,commercial_risk\nA,92,10\n"
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "x.csv"
-            path.write_text(text)
+            path = Path(tmp) / "x.csv"; path.write_text(text)
             with self.assertRaisesRegex(ValueError, "vendor_risk"):
                 score_csv(path)
 
@@ -106,21 +127,10 @@ class SupplierScorecardTests(unittest.TestCase):
     def test_score_from_tools_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rfq = root / "rfq.json"
-            pay = root / "pay.json"
-            vendor = root / "vendor.json"
-            rfq.write_text(json.dumps({
-                "tool": "rfqdiff",
-                "version": "0.2",
-                "suppliers": [{"name": "A", "score": 97.1}],
-            }))
-            pay.write_text(json.dumps({
-                "tool": "payment-terms-parser",
-                "version": "0.2",
-                "supplier": "A",
-                "commercial_risk": 30,
-            }))
-            vendor.write_text(json.dumps({"vendor": "A", "score": 31}))
+            rfq = root / "rfq.json"; pay = root / "pay.json"; vendor = root / "vendor.json"
+            rfq.write_text(json.dumps({"tool":"rfqdiff","version":"0.2","suppliers":[{"name":"A","score":97.1}]}))
+            pay.write_text(json.dumps({"tool":"payment-terms-parser","version":"0.2","supplier":"A","commercial_risk":30}))
+            vendor.write_text(json.dumps({"vendor":"A","score":31}))
             result = score_from_tools("A", rfq, pay, vendor)
         self.assertEqual(result["recommendation"], "PREFERRED")
         self.assertEqual(result["sources"]["rfqdiff"]["version"], "0.2")
@@ -128,12 +138,10 @@ class SupplierScorecardTests(unittest.TestCase):
     def test_score_from_tools_missing_supplier(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rfq = root / "rfq.json"
-            pay = root / "pay.json"
-            vendor = root / "vendor.json"
-            rfq.write_text(json.dumps({"suppliers": [{"name": "B", "score": 70}]}))
-            pay.write_text(json.dumps({"commercial_risk": 20}))
-            vendor.write_text(json.dumps({"vendor": "A", "score": 20}))
+            rfq = root / "rfq.json"; pay = root / "pay.json"; vendor = root / "vendor.json"
+            rfq.write_text(json.dumps({"suppliers":[{"name":"B","score":70}]}))
+            pay.write_text(json.dumps({"commercial_risk":20}))
+            vendor.write_text(json.dumps({"vendor":"A","score":20}))
             with self.assertRaisesRegex(ValueError, "does not contain"):
                 score_from_tools("A", rfq, pay, vendor)
 
