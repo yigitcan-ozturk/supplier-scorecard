@@ -4,9 +4,10 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-VERSION = "0.8"
-COMPONENTS = ("quotation", "commercial", "vendor_risk")
-DEFAULT_WEIGHTS = {"quotation": 0.50, "commercial": 0.20, "vendor_risk": 0.30}
+VERSION = "0.9"
+COMPONENTS = ("quotation", "commercial", "vendor_risk", "technical")
+LEGACY_COMPONENTS = ("quotation", "commercial", "vendor_risk")
+DEFAULT_WEIGHTS = {"quotation": 0.40, "commercial": 0.16, "vendor_risk": 0.24, "technical": 0.20}
 WEIGHTS = DEFAULT_WEIGHTS
 CSV_COLUMNS = ("supplier", "quotation_score", "commercial_risk", "vendor_risk")
 
@@ -21,12 +22,12 @@ DEFAULT_POLICY = {
 CATEGORY_PROFILES = {
     "general-procurement": {
         "description": "Balanced default profile for general supplier decisions.",
-        "weights": {"quotation": 0.50, "commercial": 0.20, "vendor_risk": 0.30},
+        "weights": {"quotation": 0.40, "commercial": 0.16, "vendor_risk": 0.24, "technical": 0.20},
         "policy": dict(DEFAULT_POLICY),
     },
     "office-supplies": {
         "description": "Quotation-led profile for lower-complexity, replaceable supply categories.",
-        "weights": {"quotation": 0.65, "commercial": 0.20, "vendor_risk": 0.15},
+        "weights": {"quotation": 0.585, "commercial": 0.18, "vendor_risk": 0.135, "technical": 0.10},
         "policy": {
             "commercial_review_threshold": 90,
             "vendor_review_threshold": 85,
@@ -37,7 +38,7 @@ CATEGORY_PROFILES = {
     },
     "critical-machining": {
         "description": "Risk-led profile for quality-sensitive machining and engineered components.",
-        "weights": {"quotation": 0.30, "commercial": 0.15, "vendor_risk": 0.55},
+        "weights": {"quotation": 0.21, "commercial": 0.105, "vendor_risk": 0.385, "technical": 0.30},
         "policy": {
             "commercial_review_threshold": 70,
             "vendor_review_threshold": 55,
@@ -48,7 +49,7 @@ CATEGORY_PROFILES = {
     },
     "single-source": {
         "description": "Conservative profile for dependency-heavy single-source procurement.",
-        "weights": {"quotation": 0.30, "commercial": 0.20, "vendor_risk": 0.50},
+        "weights": {"quotation": 0.24, "commercial": 0.16, "vendor_risk": 0.40, "technical": 0.20},
         "policy": {
             "commercial_review_threshold": 70,
             "vendor_review_threshold": 60,
@@ -59,7 +60,7 @@ CATEGORY_PROFILES = {
     },
     "high-value-capex": {
         "description": "Approval-focused profile for high-value capital expenditure decisions.",
-        "weights": {"quotation": 0.40, "commercial": 0.30, "vendor_risk": 0.30},
+        "weights": {"quotation": 0.34, "commercial": 0.255, "vendor_risk": 0.255, "technical": 0.15},
         "policy": {
             "commercial_review_threshold": 60,
             "vendor_review_threshold": 65,
@@ -74,6 +75,7 @@ COMPONENT_LABELS = {
     "quotation": "quotation competitiveness",
     "commercial": "commercial/payment risk",
     "vendor_risk": "vendor risk",
+    "technical": "technical compliance",
 }
 
 
@@ -104,12 +106,19 @@ def normalize_weights(weights=None):
     if not isinstance(weights, dict):
         raise ValueError("weights must be a JSON object.")
     unknown = sorted(set(weights) - set(COMPONENTS))
-    missing = sorted(set(COMPONENTS) - set(weights))
     if unknown:
         raise ValueError("unknown weight field(s): " + ", ".join(unknown))
-    if missing:
-        raise ValueError("weights are missing component(s): " + ", ".join(missing))
-    normalized = {name: float(weights[name]) for name in COMPONENTS}
+
+    keys = set(weights)
+    if keys == set(LEGACY_COMPONENTS):
+        normalized = {name: float(weights[name]) for name in LEGACY_COMPONENTS}
+        normalized["technical"] = 0.0
+    else:
+        missing = sorted(set(COMPONENTS) - keys)
+        if missing:
+            raise ValueError("weights are missing component(s): " + ", ".join(missing))
+        normalized = {name: float(weights[name]) for name in COMPONENTS}
+
     for name, value in normalized.items():
         if value < 0:
             raise ValueError(f"{name} weight cannot be negative.")
@@ -117,6 +126,19 @@ def normalize_weights(weights=None):
     if abs(total - 1.0) > 1e-9:
         raise ValueError(f"weights must total 100%; current total is {total * 100:.2f}%.")
     return normalized
+
+
+def effective_weights(profile_weights, technical_compliance=None):
+    defined = normalize_weights(profile_weights)
+    if technical_compliance is not None or defined["technical"] == 0:
+        return dict(defined)
+
+    legacy_total = sum(defined[name] for name in LEGACY_COMPONENTS)
+    if legacy_total <= 0:
+        raise ValueError("profile must assign weight to at least one non-technical component when technical compliance is omitted.")
+    active = {name: defined[name] / legacy_total for name in LEGACY_COMPONENTS}
+    active["technical"] = 0.0
+    return active
 
 
 def normalize_policy(policy=None, *, base_policy=None):
@@ -327,6 +349,12 @@ def explain_supplier(result):
         strengths.append(f"Low vendor risk ({_fmt(inputs['vendor_risk'])}/100 risk).")
     elif inputs["vendor_risk"] >= 50:
         warnings.append(f"Elevated vendor risk ({_fmt(inputs['vendor_risk'])}/100 risk).")
+    technical = inputs.get("technical_compliance")
+    if technical is not None:
+        if technical >= 90:
+            strengths.append(f"Strong technical compliance ({_fmt(technical)}/100).")
+        elif technical < 70:
+            warnings.append(f"Weak technical compliance ({_fmt(technical)}/100).")
     for trigger in result.get("policy", {}).get("triggers", []):
         if trigger["reason"] not in warnings:
             warnings.append(trigger["reason"])
@@ -360,7 +388,9 @@ def _comparison_phrase(component, delta):
         return f"stronger quotation score (+{points})" if delta > 0 else f"weaker quotation score (-{points})"
     if component == "commercial":
         return f"lower commercial/payment risk (+{points})" if delta > 0 else f"higher commercial/payment risk (-{points})"
-    return f"lower vendor risk (+{points})" if delta > 0 else f"higher vendor risk (-{points})"
+    if component == "vendor_risk":
+        return f"lower vendor risk (+{points})" if delta > 0 else f"higher vendor risk (-{points})"
+    return f"stronger technical compliance (+{points})" if delta > 0 else f"weaker technical compliance (-{points})"
 
 
 def rank_results(results):
@@ -419,6 +449,7 @@ def score_supplier(
     commercial_risk,
     vendor_risk,
     *,
+    technical_compliance=None,
     category_profile=None,
     policy=None,
     weights=None,
@@ -431,13 +462,21 @@ def score_supplier(
     quotation_score = validate_score("quotation score", quotation_score)
     commercial_risk = validate_score("commercial risk", commercial_risk)
     vendor_risk = validate_score("vendor risk", vendor_risk)
+    if technical_compliance is not None:
+        technical_compliance = validate_score("technical compliance", technical_compliance)
+
     profile = resolve_profile(category_profile, policy=policy, weights=weights, profile_file=profile_file)
+    active_weights = effective_weights(profile["weights"], technical_compliance)
     components = {
         "quotation": quotation_score,
         "commercial": 100.0 - commercial_risk,
         "vendor_risk": 100.0 - vendor_risk,
+        "technical": technical_compliance,
     }
-    weighted = {name: round(components[name] * profile["weights"][name], 2) for name in COMPONENTS}
+    weighted = {
+        name: round((components[name] or 0.0) * active_weights[name], 2)
+        for name in COMPONENTS
+    }
     total = round(sum(weighted.values()), 2)
     result = {
         "tool": "supplier-scorecard",
@@ -448,16 +487,19 @@ def score_supplier(
             "name": profile["name"],
             "description": profile["description"],
             "source": profile["source"],
+            "defined_weights": profile["weights"],
         },
+        "scoring_mode": "4-component" if technical_compliance is not None else "legacy-3-component",
         "score": total,
         "recommendation": recommendation(total),
         "components": components,
         "weighted": weighted,
-        "weights": profile["weights"],
+        "weights": active_weights,
         "inputs": {
             "quotation_score": quotation_score,
             "commercial_risk": commercial_risk,
             "vendor_risk": vendor_risk,
+            "technical_compliance": technical_compliance,
         },
     }
     return apply_policy(result, compliance_incidents=compliance_incidents, policy=profile["policy"])
@@ -476,12 +518,15 @@ def score_csv(path, *, category_profile=None, profile_file=None):
             if not any((value or "").strip() for value in row.values()):
                 continue
             try:
+                technical = row.get("technical_compliance")
+                technical = None if technical is None or not str(technical).strip() else float(technical)
                 results.append(
                     score_supplier(
                         row["supplier"],
                         float(row["quotation_score"]),
                         float(row["commercial_risk"]),
                         float(row["vendor_risk"]),
+                        technical_compliance=technical,
                         category_profile=category_profile,
                         profile_file=profile_file,
                     )
@@ -560,7 +605,7 @@ def extract_compliance_incidents(payload, supplier):
     return None
 
 
-def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json, *, category_profile=None, profile_file=None):
+def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json, *, technical_compliance=None, category_profile=None, profile_file=None):
     rfq_payload = load_json(rfq_json)
     payment_payload = load_json(payment_json)
     vendor_payload = load_json(vendor_risk_json)
@@ -569,6 +614,7 @@ def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json, *, cate
         extract_rfq_score(rfq_payload, supplier),
         extract_commercial_risk(payment_payload, supplier),
         extract_vendor_risk(vendor_payload, supplier),
+        technical_compliance=technical_compliance,
         compliance_incidents=extract_compliance_incidents(vendor_payload, supplier),
         category_profile=category_profile,
         profile_file=profile_file,
@@ -590,6 +636,9 @@ def print_report(result):
     print("-" * 76)
     print(f"Supplier             : {result['supplier']}")
     print(f"Category profile     : {result['category_profile']}")
+    print(f"Scoring mode         : {result['scoring_mode']}")
+    if result["inputs"].get("technical_compliance") is not None:
+        print(f"Technical compliance : {result['inputs']['technical_compliance']:.2f} / 100")
     print(f"Composite score      : {result['score']:.2f} / 100")
     print(f"Score recommendation : {result['recommendation']}")
     print(f"Policy status        : {result['policy']['status']}")
@@ -624,8 +673,8 @@ def print_profiles():
         profile = get_category_profile(name)
         w, p = profile["weights"], profile["policy"]
         print(
-            f"{name:20} q={w['quotation']*100:>4.0f}% c={w['commercial']*100:>4.0f}% "
-            f"v={w['vendor_risk']*100:>4.0f}%  min-auto={p['minimum_auto_score']:>5.1f}"
+            f"{name:20} q={w['quotation']*100:>5.1f}% c={w['commercial']*100:>5.1f}% "
+            f"v={w['vendor_risk']*100:>5.1f}% t={w['technical']*100:>5.1f}%  min-auto={p['minimum_auto_score']:>5.1f}"
         )
         print(f"  {profile['description']}")
 
@@ -636,6 +685,7 @@ def build_parser():
     parser.add_argument("--quotation-score", type=float)
     parser.add_argument("--commercial-risk", type=float)
     parser.add_argument("--vendor-risk", type=float)
+    parser.add_argument("--technical-compliance", type=float, help="Optional technical compliance score (0-100, higher is better).")
     parser.add_argument("--csv", dest="csv_path")
     parser.add_argument("--rfq-json")
     parser.add_argument("--payment-json")
@@ -659,7 +709,7 @@ def validate_cli_mode(parser, args):
     pipeline_requested = any(value is not None for value in pipeline_values)
     if args.csv_path:
         if args.supplier or pipeline_requested or any(
-            value is not None for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)
+            value is not None for value in (args.quotation_score, args.commercial_risk, args.vendor_risk, args.technical_compliance)
         ):
             parser.error("--csv cannot be combined with single-supplier inputs.")
         return "csv"
@@ -694,6 +744,7 @@ def main():
                 args.rfq_json,
                 args.payment_json,
                 args.vendor_risk_json,
+                technical_compliance=args.technical_compliance,
                 category_profile=args.category_profile,
                 profile_file=args.profile_file,
             )
@@ -703,6 +754,7 @@ def main():
                 args.quotation_score,
                 args.commercial_risk,
                 args.vendor_risk,
+                technical_compliance=args.technical_compliance,
                 category_profile=args.category_profile,
                 profile_file=args.profile_file,
             )
