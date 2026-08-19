@@ -26,7 +26,7 @@ from main import (
 class ScoreTests(unittest.TestCase):
     def test_default_score(self):
         result = score_supplier("A", 92, 10, 12)
-        self.assertEqual(result["version"], "0.8")
+        self.assertEqual(result["version"], "0.9")
         self.assertAlmostEqual(result["score"], 90.4)
         self.assertEqual(result["final_decision"], "PREFERRED")
 
@@ -56,6 +56,29 @@ class ScoreTests(unittest.TestCase):
         explanation = explain_portfolio([b, a])
         self.assertEqual(explanation["winner"], "A")
         self.assertGreater(explanation["score_gap"], 0)
+
+    def test_legacy_three_component_score_is_unchanged(self):
+        result = score_supplier("A", 92, 10, 12)
+        self.assertEqual(result["scoring_mode"], "legacy-3-component")
+        self.assertAlmostEqual(result["score"], 90.4)
+        self.assertEqual(result["weights"]["technical"], 0.0)
+
+    def test_technical_compliance_becomes_fourth_component(self):
+        result = score_supplier("A", 92, 10, 12, technical_compliance=85)
+        self.assertEqual(result["scoring_mode"], "4-component")
+        self.assertEqual(result["components"]["technical"], 85)
+        self.assertEqual(result["weighted"]["technical"], 17.0)
+        self.assertAlmostEqual(result["score"], 89.32)
+
+    def test_technical_compliance_validation(self):
+        with self.assertRaises(ValueError):
+            score_supplier("A", 90, 10, 10, technical_compliance=101)
+
+    def test_technical_strength_and_warning(self):
+        strong = score_supplier("A", 80, 20, 20, technical_compliance=95)
+        weak = score_supplier("B", 80, 20, 20, technical_compliance=55)
+        self.assertTrue(any("technical compliance" in x.lower() for x in strong["explanation"]["strengths"]))
+        self.assertTrue(any("technical compliance" in x.lower() for x in weak["explanation"]["warnings"]))
 
 
 class PolicyTests(unittest.TestCase):
@@ -96,6 +119,10 @@ class BuiltinProfileTests(unittest.TestCase):
     def test_weights_total(self):
         for name in CATEGORY_PROFILES:
             self.assertAlmostEqual(sum(get_category_profile(name)["weights"].values()), 1.0)
+
+    def test_builtin_profiles_define_technical_weight(self):
+        self.assertEqual(get_category_profile("general-procurement")["weights"]["technical"], .20)
+        self.assertEqual(get_category_profile("critical-machining")["weights"]["technical"], .30)
 
     def test_invalid_weights(self):
         with self.assertRaises(ValueError):
@@ -149,8 +176,7 @@ class CustomProfileTests(unittest.TestCase):
                 load_profile_file(self.write(tmp, payload))
 
     def test_custom_profile_rejects_unknown_field(self):
-        payload = self.payload()
-        payload["magic"] = 1
+        payload = self.payload(); payload["magic"] = 1
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
                 load_profile_file(self.write(tmp, payload))
@@ -168,6 +194,26 @@ class CustomProfileTests(unittest.TestCase):
             result = score_csv(csv_path, profile_file=profile)[0]
         self.assertEqual(result["category_profile"], "marble-sourcing")
 
+    def test_custom_profile_accepts_four_component_weights(self):
+        payload = self.payload()
+        payload["weights"] = {
+            "quotation": .25,
+            "commercial": .15,
+            "vendor_risk": .35,
+            "technical": .25,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, payload)
+            profile = load_profile_file(path)
+            result = score_supplier("A", 90, 20, 30, technical_compliance=88, profile_file=path)
+        self.assertEqual(profile["weights"]["technical"], .25)
+        self.assertEqual(result["weights"]["technical"], .25)
+
+    def test_legacy_custom_profile_gets_zero_technical_weight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = load_profile_file(self.write(tmp))
+        self.assertEqual(profile["weights"]["technical"], 0.0)
+
 
 class ContractTests(unittest.TestCase):
     def test_extract_contracts(self):
@@ -178,13 +224,24 @@ class ContractTests(unittest.TestCase):
     def test_score_from_tools(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rfq, pay, vendor = root / "rfq.json", root / "pay.json", root / "vendor.json"
+            rfq, pay, vendor = root/"rfq.json", root/"pay.json", root/"vendor.json"
             rfq.write_text(json.dumps({"tool": "rfqdiff", "version": "0.2", "suppliers": [{"name": "A", "score": 92}]}))
             pay.write_text(json.dumps({"tool": "payment-terms-parser", "version": "0.2", "supplier": "A", "commercial_risk": 10}))
             vendor.write_text(json.dumps({"vendor": "A", "score": 12, "inputs": {"compliance_incidents": 0}}))
             result = score_from_tools("A", rfq, pay, vendor)
         self.assertEqual(result["final_decision"], "PREFERRED")
         self.assertIn("sources", result)
+
+    def test_score_from_tools_accepts_technical_compliance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rfq, pay, vendor = root/"rfq.json", root/"pay.json", root/"vendor.json"
+            rfq.write_text(json.dumps({"suppliers": [{"name": "A", "score": 90}]}))
+            pay.write_text(json.dumps({"supplier": "A", "commercial_risk": 20}))
+            vendor.write_text(json.dumps({"vendor": "A", "score": 25}))
+            result = score_from_tools("A", rfq, pay, vendor, technical_compliance=88)
+        self.assertEqual(result["inputs"]["technical_compliance"], 88)
+        self.assertEqual(result["scoring_mode"], "4-component")
 
 
 if __name__ == "__main__":
