@@ -1,10 +1,11 @@
 {
   "name": "machinery-capex",
-  "description": "Custom profile for machinery and capital-equipment sourcing, balancing acquisition economics, payment exposure and supplier execution risk.",
+  "description": "Custom profile for machinery and capital-equipment sourcing, balancing acquisition economics, payment exposure, technical fit and supplier execution risk.",
   "weights": {
-    "quotation": 0.35,
-    "commercial": 0.30,
-    "vendor_risk": 0.35
+    "quotation": 0.28,
+    "commercial": 0.24,
+    "vendor_risk": 0.28,
+    "technical": 0.20
   },
   "policy": {
     "commercial_review_threshold": 55,
