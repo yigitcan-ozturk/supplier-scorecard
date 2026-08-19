@@ -1,0 +1,12 @@
+{
+  "vendor": "Supplier A",
+  "score": 31.0,
+  "risk": "MEDIUM",
+  "components": {
+    "delivery": 15.0,
+    "quality": 30.0,
+    "commercial": 40.0,
+    "compliance": 40.0,
+    "dependency": 50.0
+  }
+}
