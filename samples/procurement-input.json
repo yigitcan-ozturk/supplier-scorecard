@@ -1,0 +1,27 @@
+{
+  "supplier": "Supplier A",
+  "target_currency": "EUR",
+  "quotes": [
+    {
+      "name": "Supplier A",
+      "currency": "EUR",
+      "price": 84200,
+      "lead_time_weeks": 8,
+      "payment_days": 30
+    },
+    {
+      "name": "Supplier B",
+      "currency": "EUR",
+      "price": 79400,
+      "lead_time_weeks": 14,
+      "payment_days": 0
+    }
+  ],
+  "payment_terms": "20% advance, 80% after delivery",
+  "vendor_risk": {
+    "on_time_delivery": 92,
+    "defect_rate": 1.5,
+    "compliance_incidents": 0,
+    "dependency_share": 30
+  }
+}
