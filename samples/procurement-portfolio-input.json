@@ -1,0 +1,58 @@
+{
+  "target_currency": "EUR",
+  "quotes": [
+    {
+      "name": "Supplier A",
+      "currency": "EUR",
+      "price": 84200,
+      "lead_time_weeks": 8,
+      "payment_days": 30
+    },
+    {
+      "name": "Supplier B",
+      "currency": "EUR",
+      "price": 79400,
+      "lead_time_weeks": 14,
+      "payment_days": 0
+    },
+    {
+      "name": "Supplier C",
+      "currency": "EUR",
+      "price": 87000,
+      "lead_time_weeks": 10,
+      "payment_days": 45
+    }
+  ],
+  "supplier_profiles": [
+    {
+      "supplier": "Supplier A",
+      "payment_terms": "20% advance, 80% after delivery",
+      "vendor_risk": {
+        "on_time_delivery": 92,
+        "defect_rate": 1.5,
+        "compliance_incidents": 0,
+        "dependency_share": 30
+      }
+    },
+    {
+      "supplier": "Supplier B",
+      "payment_terms": "50% advance, 50% before shipment",
+      "vendor_risk": {
+        "on_time_delivery": 80,
+        "defect_rate": 4,
+        "compliance_incidents": 1,
+        "dependency_share": 60
+      }
+    },
+    {
+      "supplier": "Supplier C",
+      "payment_terms": "Net 45 days",
+      "vendor_risk": {
+        "on_time_delivery": 95,
+        "defect_rate": 1,
+        "compliance_incidents": 0,
+        "dependency_share": 20
+      }
+    }
+  ]
+}
