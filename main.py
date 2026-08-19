@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-VERSION = "0.2"
+VERSION = "0.3"
 
 WEIGHTS = {
     "quotation": 0.50,
@@ -253,29 +253,13 @@ def score_from_tools(
     result["sources"] = {
         "rfqdiff": {
             "path": str(rfq_json),
-            "tool": (
-                rfq_payload.get("tool")
-                if isinstance(rfq_payload, dict)
-                else None
-            ),
-            "version": (
-                rfq_payload.get("version")
-                if isinstance(rfq_payload, dict)
-                else None
-            ),
+            "tool": rfq_payload.get("tool") if isinstance(rfq_payload, dict) else None,
+            "version": rfq_payload.get("version") if isinstance(rfq_payload, dict) else None,
         },
         "payment_terms_parser": {
             "path": str(payment_json),
-            "tool": (
-                payment_payload.get("tool")
-                if isinstance(payment_payload, dict)
-                else None
-            ),
-            "version": (
-                payment_payload.get("version")
-                if isinstance(payment_payload, dict)
-                else None
-            ),
+            "tool": payment_payload.get("tool") if isinstance(payment_payload, dict) else None,
+            "version": payment_payload.get("version") if isinstance(payment_payload, dict) else None,
         },
         "vendor_risk_engine": {
             "path": str(vendor_risk_json),
@@ -284,11 +268,7 @@ def score_from_tools(
                 if isinstance(vendor_payload, dict)
                 else "vendor-risk-engine"
             ),
-            "version": (
-                vendor_payload.get("version")
-                if isinstance(vendor_payload, dict)
-                else None
-            ),
+            "version": vendor_payload.get("version") if isinstance(vendor_payload, dict) else None,
         },
     }
 
@@ -366,43 +346,14 @@ def build_parser():
         nargs="?",
         help="Supplier name for single-supplier or pipeline scoring.",
     )
-    parser.add_argument(
-        "--quotation-score",
-        type=float,
-        help="Quotation/commercial comparison score (0-100, higher is better).",
-    )
-    parser.add_argument(
-        "--commercial-risk",
-        type=float,
-        help="Payment/commercial risk score (0-100, higher is riskier).",
-    )
-    parser.add_argument(
-        "--vendor-risk",
-        type=float,
-        help="Vendor risk score (0-100, higher is riskier).",
-    )
-    parser.add_argument(
-        "--csv",
-        dest="csv_path",
-        help="Score and rank a supplier portfolio from CSV.",
-    )
-    parser.add_argument(
-        "--rfq-json",
-        help="rfqdiff structured JSON output.",
-    )
-    parser.add_argument(
-        "--payment-json",
-        help="payment-terms-parser structured JSON output.",
-    )
-    parser.add_argument(
-        "--vendor-risk-json",
-        help="vendor-risk-engine structured JSON output.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Return structured JSON instead of text output.",
-    )
+    parser.add_argument("--quotation-score", type=float)
+    parser.add_argument("--commercial-risk", type=float)
+    parser.add_argument("--vendor-risk", type=float)
+    parser.add_argument("--csv", dest="csv_path")
+    parser.add_argument("--rfq-json")
+    parser.add_argument("--payment-json")
+    parser.add_argument("--vendor-risk-json")
+    parser.add_argument("--json", action="store_true")
 
     return parser
 
@@ -413,23 +364,15 @@ def validate_cli_mode(parser, args):
         "--payment-json": args.payment_json,
         "--vendor-risk-json": args.vendor_risk_json,
     }
-    pipeline_requested = any(
-        value is not None for value in pipeline_values.values()
-    )
+    pipeline_requested = any(value is not None for value in pipeline_values.values())
 
     if args.csv_path and (args.supplier or pipeline_requested):
-        parser.error(
-            "--csv cannot be combined with a supplier name or pipeline JSON."
-        )
+        parser.error("--csv cannot be combined with a supplier name or pipeline JSON.")
 
     if args.csv_path:
         if any(
             value is not None
-            for value in (
-                args.quotation_score,
-                args.commercial_risk,
-                args.vendor_risk,
-            )
+            for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)
         ):
             parser.error("--csv cannot be combined with manual score inputs.")
         return "csv"
@@ -438,26 +381,15 @@ def validate_cli_mode(parser, args):
         if not args.supplier:
             parser.error("pipeline mode requires a supplier name.")
 
-        missing = [
-            flag for flag, value in pipeline_values.items()
-            if value is None
-        ]
+        missing = [flag for flag, value in pipeline_values.items() if value is None]
         if missing:
-            parser.error(
-                "pipeline mode requires: " + ", ".join(missing)
-            )
+            parser.error("pipeline mode requires: " + ", ".join(missing))
 
         if any(
             value is not None
-            for value in (
-                args.quotation_score,
-                args.commercial_risk,
-                args.vendor_risk,
-            )
+            for value in (args.quotation_score, args.commercial_risk, args.vendor_risk)
         ):
-            parser.error(
-                "pipeline mode cannot be combined with manual score inputs."
-            )
+            parser.error("pipeline mode cannot be combined with manual score inputs.")
 
         return "pipeline"
 
@@ -506,12 +438,7 @@ def main():
                 vendor_risk=args.vendor_risk,
             )
 
-    except (
-        OSError,
-        json.JSONDecodeError,
-        TypeError,
-        ValueError,
-    ) as exc:
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         parser.error(str(exc))
 
     if args.json:
