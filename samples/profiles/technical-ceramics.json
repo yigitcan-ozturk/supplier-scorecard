@@ -1,0 +1,16 @@
+{
+  "name": "technical-ceramics",
+  "description": "Custom profile for technical ceramic sourcing, emphasizing supplier capability, consistency, traceability and execution risk over pure quotation competitiveness.",
+  "weights": {
+    "quotation": 0.25,
+    "commercial": 0.15,
+    "vendor_risk": 0.60
+  },
+  "policy": {
+    "commercial_review_threshold": 65,
+    "vendor_review_threshold": 50,
+    "compliance_review_incidents": 1,
+    "compliance_block_incidents": 2,
+    "minimum_auto_score": 82
+  }
+}
