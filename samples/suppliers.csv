@@ -1,0 +1,5 @@
+supplier,quotation_score,commercial_risk,vendor_risk
+Supplier A,92,10,12
+Supplier B,78,25,30
+Supplier C,65,50,55
+Supplier D,45,80,85
