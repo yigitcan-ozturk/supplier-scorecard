@@ -3,10 +3,16 @@ import csv
 import json
 from pathlib import Path
 
-VERSION = "0.5"
+VERSION = "0.6"
 WEIGHTS = {"quotation": 0.50, "commercial": 0.20, "vendor_risk": 0.30}
 CSV_COLUMNS = ("supplier", "quotation_score", "commercial_risk", "vendor_risk")
 
+DEFAULT_POLICY = {
+    "commercial_review_threshold": 80.0,
+    "vendor_review_threshold": 75.0,
+    "compliance_review_incidents": 1,
+    "compliance_block_incidents": 3,
+}
 
 COMPONENT_LABELS = {
     "quotation": "quotation competitiveness",
@@ -37,6 +43,168 @@ def _format_number(value):
     if value.is_integer():
         return str(int(value))
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def normalize_policy(policy=None):
+    active = dict(DEFAULT_POLICY)
+    if policy is not None:
+        if not isinstance(policy, dict):
+            raise ValueError("policy must be a JSON object.")
+        unknown = sorted(set(policy) - set(DEFAULT_POLICY))
+        if unknown:
+            raise ValueError("unknown policy field(s): " + ", ".join(unknown))
+        active.update(policy)
+
+    active["commercial_review_threshold"] = validate_score(
+        "commercial review threshold",
+        active["commercial_review_threshold"],
+    )
+    active["vendor_review_threshold"] = validate_score(
+        "vendor review threshold",
+        active["vendor_review_threshold"],
+    )
+
+    for name in ("compliance_review_incidents", "compliance_block_incidents"):
+        value = active[name]
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be a non-negative integer.")
+        try:
+            number = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be a non-negative integer.") from exc
+        if float(value) != number or number < 0:
+            raise ValueError(f"{name} must be a non-negative integer.")
+        active[name] = number
+
+    if active["compliance_review_incidents"] > active["compliance_block_incidents"]:
+        raise ValueError(
+            "compliance_review_incidents cannot exceed compliance_block_incidents."
+        )
+
+    return active
+
+
+def evaluate_policy(result, *, compliance_incidents=None, policy=None):
+    active = normalize_policy(policy)
+    commercial_risk = validate_score(
+        "commercial risk",
+        result["inputs"]["commercial_risk"],
+    )
+    vendor_risk = validate_score(
+        "vendor risk",
+        result["inputs"]["vendor_risk"],
+    )
+
+    triggers = []
+
+    if commercial_risk >= active["commercial_review_threshold"]:
+        triggers.append(
+            {
+                "rule": "commercial_exposure",
+                "severity": "REVIEW",
+                "value": commercial_risk,
+                "threshold": active["commercial_review_threshold"],
+                "reason": (
+                    f"Commercial/payment risk is {_format_number(commercial_risk)}/100, "
+                    f"meeting the review threshold of "
+                    f"{_format_number(active['commercial_review_threshold'])}/100."
+                ),
+            }
+        )
+
+    if vendor_risk >= active["vendor_review_threshold"]:
+        triggers.append(
+            {
+                "rule": "vendor_risk",
+                "severity": "REVIEW",
+                "value": vendor_risk,
+                "threshold": active["vendor_review_threshold"],
+                "reason": (
+                    f"Vendor risk is {_format_number(vendor_risk)}/100, "
+                    f"meeting the review threshold of "
+                    f"{_format_number(active['vendor_review_threshold'])}/100."
+                ),
+            }
+        )
+
+    if compliance_incidents is not None:
+        if isinstance(compliance_incidents, bool):
+            raise ValueError("compliance incidents must be a non-negative integer.")
+        try:
+            incidents = int(compliance_incidents)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "compliance incidents must be a non-negative integer."
+            ) from exc
+        if float(compliance_incidents) != incidents or incidents < 0:
+            raise ValueError("compliance incidents must be a non-negative integer.")
+
+        if incidents >= active["compliance_block_incidents"]:
+            triggers.append(
+                {
+                    "rule": "compliance_incidents",
+                    "severity": "BLOCKED",
+                    "value": incidents,
+                    "threshold": active["compliance_block_incidents"],
+                    "reason": (
+                        f"Compliance incidents are {incidents}, meeting the block "
+                        f"threshold of {active['compliance_block_incidents']}."
+                    ),
+                }
+            )
+        elif incidents >= active["compliance_review_incidents"]:
+            triggers.append(
+                {
+                    "rule": "compliance_incidents",
+                    "severity": "REVIEW",
+                    "value": incidents,
+                    "threshold": active["compliance_review_incidents"],
+                    "reason": (
+                        f"Compliance incidents are {incidents}, meeting the review "
+                        f"threshold of {active['compliance_review_incidents']}."
+                    ),
+                }
+            )
+
+    if any(item["severity"] == "BLOCKED" for item in triggers):
+        status = "BLOCKED"
+    elif triggers:
+        status = "REVIEW"
+    else:
+        status = "PASS"
+
+    score_recommendation = result["recommendation"]
+    if status == "BLOCKED":
+        final_decision = "BLOCKED"
+    elif status == "REVIEW" and score_recommendation in {"PREFERRED", "ACCEPTABLE"}:
+        final_decision = "REVIEW"
+    else:
+        final_decision = score_recommendation
+
+    auto_eligible = (
+        status == "PASS"
+        and score_recommendation in {"PREFERRED", "ACCEPTABLE"}
+    )
+
+    return {
+        "status": status,
+        "score_recommendation": score_recommendation,
+        "final_decision": final_decision,
+        "auto_eligible": auto_eligible,
+        "triggers": triggers,
+        "rules": active,
+    }
+
+
+def apply_policy(result, *, compliance_incidents=None, policy=None):
+    result["policy"] = evaluate_policy(
+        result,
+        compliance_incidents=compliance_incidents,
+        policy=policy,
+    )
+    result["final_decision"] = result["policy"]["final_decision"]
+    result["explanation"] = explain_supplier(result)
+    return result
 
 
 def explain_supplier(result):
@@ -79,6 +247,12 @@ def explain_supplier(result):
             f"Elevated vendor risk ({_format_number(vendor_risk)}/100 risk)."
         )
 
+    policy_result = result.get("policy")
+    if policy_result:
+        for trigger in policy_result["triggers"]:
+            if trigger["reason"] not in warnings:
+                warnings.append(trigger["reason"])
+
     primary_component = max(weighted, key=weighted.get)
     primary_driver = {
         "component": primary_component,
@@ -87,24 +261,32 @@ def explain_supplier(result):
         "weighted_points": round(float(weighted[primary_component]), 2),
     }
 
-    if strengths and warnings:
+    final_decision = result.get("final_decision", result["recommendation"])
+    if policy_result and policy_result["status"] in {"REVIEW", "BLOCKED"}:
+        first_reason = policy_result["triggers"][0]["reason"]
         summary = (
-            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100; "
+            f"{result['supplier']} scores {result['score']:.2f}/100 "
+            f"({result['recommendation']} by score) but the final decision is "
+            f"{final_decision} because {first_reason[0].lower() + first_reason[1:]}"
+        )
+    elif strengths and warnings:
+        summary = (
+            f"{result['supplier']} is {final_decision} at {result['score']:.2f}/100; "
             f"the decision combines {strengths[0].lower()} with {warnings[0].lower()}"
         )
     elif strengths:
         summary = (
-            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100, "
+            f"{result['supplier']} is {final_decision} at {result['score']:.2f}/100, "
             f"supported by {strengths[0].lower()}"
         )
     elif warnings:
         summary = (
-            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100, "
+            f"{result['supplier']} is {final_decision} at {result['score']:.2f}/100, "
             f"with {warnings[0].lower()}"
         )
     else:
         summary = (
-            f"{result['supplier']} is {result['recommendation']} at {result['score']:.2f}/100 "
+            f"{result['supplier']} is {final_decision} at {result['score']:.2f}/100 "
             "with no extreme component signal."
         )
 
@@ -139,7 +321,7 @@ def _comparison_phrase(component, delta):
 
 
 def explain_portfolio(results):
-    """Explain why the top-ranked supplier leads the runner-up."""
+    """Explain why the top-ranked supplier leads the runner-up by score."""
     ranked = rank_results(results)
     if not ranked:
         raise ValueError("portfolio explanation requires at least one supplier result.")
@@ -249,8 +431,7 @@ def score_supplier(supplier, quotation_score, commercial_risk, vendor_risk):
             "vendor_risk": vendor_risk,
         },
     }
-    result["explanation"] = explain_supplier(result)
-    return result
+    return apply_policy(result)
 
 
 def rank_results(results):
@@ -324,14 +505,19 @@ def extract_rfq_score(payload, supplier):
 def extract_commercial_risk(payload, supplier):
     if not isinstance(payload, dict):
         raise ValueError("payment-terms-parser JSON must be an object.")
-    _validate_source_supplier("payment-terms-parser", supplier, payload.get("supplier"))
+    _validate_source_supplier(
+        "payment-terms-parser",
+        supplier,
+        payload.get("supplier"),
+    )
     if "commercial_risk" in payload:
         value = payload["commercial_risk"]
     elif "buyer_exposure" in payload:
         value = payload["buyer_exposure"]
     else:
         raise ValueError(
-            "payment-terms-parser JSON must include 'commercial_risk' or 'buyer_exposure'."
+            "payment-terms-parser JSON must include 'commercial_risk' or "
+            "'buyer_exposure'."
         )
     return validate_score("commercial risk", value)
 
@@ -348,7 +534,10 @@ def extract_vendor_risk(payload, supplier):
                         f"vendor-risk entry for '{supplier}' is missing 'score'."
                     )
                 return validate_score("vendor risk", item["score"])
-        raise ValueError(f"vendor-risk JSON does not contain supplier '{supplier}'.")
+        raise ValueError(
+            f"vendor-risk JSON does not contain supplier '{supplier}'."
+        )
+
     if not isinstance(payload, dict):
         raise ValueError("vendor-risk-engine JSON must be an object or list.")
     _validate_source_supplier(
@@ -374,13 +563,21 @@ def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json):
     result["sources"] = {
         "rfqdiff": {
             "path": str(rfq_json),
-            "tool": rfq_payload.get("tool") if isinstance(rfq_payload, dict) else None,
-            "version": rfq_payload.get("version") if isinstance(rfq_payload, dict) else None,
+            "tool": rfq_payload.get("tool")
+            if isinstance(rfq_payload, dict)
+            else None,
+            "version": rfq_payload.get("version")
+            if isinstance(rfq_payload, dict)
+            else None,
         },
         "payment_terms_parser": {
             "path": str(payment_json),
-            "tool": payment_payload.get("tool") if isinstance(payment_payload, dict) else None,
-            "version": payment_payload.get("version") if isinstance(payment_payload, dict) else None,
+            "tool": payment_payload.get("tool")
+            if isinstance(payment_payload, dict)
+            else None,
+            "version": payment_payload.get("version")
+            if isinstance(payment_payload, dict)
+            else None,
         },
         "vendor_risk_engine": {
             "path": str(vendor_risk_json),
@@ -389,7 +586,9 @@ def score_from_tools(supplier, rfq_json, payment_json, vendor_risk_json):
                 if isinstance(vendor_payload, dict)
                 else "vendor-risk-engine"
             ),
-            "version": vendor_payload.get("version") if isinstance(vendor_payload, dict) else None,
+            "version": vendor_payload.get("version")
+            if isinstance(vendor_payload, dict)
+            else None,
         },
     }
     return result
@@ -413,7 +612,9 @@ def print_report(result):
     print("-" * 72)
     print(f"Supplier             : {result['supplier']}")
     print(f"Composite score      : {result['score']:.2f} / 100")
-    print(f"Recommendation       : {result['recommendation']}")
+    print(f"Score recommendation : {result['recommendation']}")
+    print(f"Policy status        : {result['policy']['status']}")
+    print(f"Final decision       : {result['final_decision']}")
     if "sources" in result:
         print("Pipeline inputs      : connected")
     print()
@@ -425,24 +626,35 @@ def print_batch_report(results):
     portfolio_explanation = explain_portfolio(ranked)
     print()
     print(f"SUPPLIER SCORECARD v{VERSION} - PORTFOLIO")
-    print("-" * 82)
-    print(f"{'#':>3} {'Supplier':30} {'Score':>8} {'Recommendation':>18}")
-    print("-" * 82)
+    print("-" * 100)
+    print(
+        f"{'#':>3} {'Supplier':28} {'Score':>8} "
+        f"{'Score rec.':>12} {'Policy':>10} {'Final':>12}"
+    )
+    print("-" * 100)
     for rank, result in enumerate(ranked, start=1):
         print(
-            f"{rank:>3} {result['supplier'][:30]:30} "
-            f"{result['score']:8.2f} {result['recommendation']:>18}"
+            f"{rank:>3} {result['supplier'][:28]:28} "
+            f"{result['score']:8.2f} "
+            f"{result['recommendation']:>12} "
+            f"{result['policy']['status']:>10} "
+            f"{result['final_decision']:>12}"
         )
-    print("-" * 82)
-    print(f"Recommended supplier : {ranked[0]['supplier']}")
-    print(f"Decision reason      : {portfolio_explanation['summary']}")
+    print("-" * 100)
+    eligible = [item for item in ranked if item["policy"]["auto_eligible"]]
+    print(
+        f"Auto-eligible supplier: "
+        f"{eligible[0]['supplier'] if eligible else 'none'}"
+    )
+    print(f"Score leader          : {ranked[0]['supplier']}")
+    print(f"Decision reason       : {portfolio_explanation['summary']}")
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Combine quotation, commercial-risk and vendor-risk signals into an "
-            "explainable supplier scorecard."
+            "explainable, policy-aware supplier scorecard."
         )
     )
     parser.add_argument("supplier", nargs="?")
@@ -476,7 +688,8 @@ def validate_cli_mode(parser, args):
             parser.error("pipeline mode requires a supplier name.")
         if not all(value is not None for value in pipeline_values):
             parser.error(
-                "pipeline mode requires: --rfq-json, --payment-json, --vendor-risk-json"
+                "pipeline mode requires: --rfq-json, --payment-json, "
+                "--vendor-risk-json"
             )
         if any(
             value is not None
@@ -486,7 +699,9 @@ def validate_cli_mode(parser, args):
                 args.vendor_risk,
             )
         ):
-            parser.error("pipeline mode cannot be combined with manual score inputs.")
+            parser.error(
+                "pipeline mode cannot be combined with manual score inputs."
+            )
         return "pipeline"
     if not args.supplier:
         parser.error("supplier name is required unless --csv is used.")
@@ -499,7 +714,8 @@ def validate_cli_mode(parser, args):
         )
     ):
         parser.error(
-            "single-supplier mode requires: --quotation-score, --commercial-risk, --vendor-risk"
+            "single-supplier mode requires: --quotation-score, "
+            "--commercial-risk, --vendor-risk"
         )
     return "manual"
 
