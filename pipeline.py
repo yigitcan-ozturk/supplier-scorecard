@@ -6,8 +6,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from main import explain_portfolio
 
-PIPELINE_VERSION = "0.2"
+
+PIPELINE_VERSION = "0.3"
 REQUIRED_TOOLS = (
     "currency-normalizer",
     "rfqdiff",
@@ -56,7 +58,9 @@ def _validate_quotes(payload):
             raise ValueError(f"quote {index} must be a JSON object.")
         missing_quote = [name for name in QUOTE_FIELDS if name not in quote]
         if missing_quote:
-            raise ValueError(f"quote {index} is missing: " + ", ".join(missing_quote))
+            raise ValueError(
+                f"quote {index} is missing: " + ", ".join(missing_quote)
+            )
         name = str(quote["name"]).strip()
         if not name:
             raise ValueError(f"quote {index} supplier name cannot be empty.")
@@ -96,6 +100,7 @@ def validate_input(payload):
         missing = [name for name in required if name not in payload]
         if missing:
             raise ValueError("pipeline input is missing: " + ", ".join(missing))
+
         supplier = str(payload["supplier"]).strip()
         if not supplier:
             raise ValueError("supplier cannot be empty.")
@@ -108,7 +113,8 @@ def validate_input(payload):
 
     if any(name in payload for name in ("supplier", "payment_terms", "vendor_risk")):
         raise ValueError(
-            "portfolio mode uses supplier_profiles; do not combine it with single-supplier fields."
+            "portfolio mode uses supplier_profiles; do not combine it with "
+            "single-supplier fields."
         )
 
     profiles = payload["supplier_profiles"]
@@ -119,9 +125,14 @@ def validate_input(payload):
     for index, profile in enumerate(profiles, start=1):
         if not isinstance(profile, dict):
             raise ValueError(f"supplier profile {index} must be a JSON object.")
-        missing = [name for name in ("supplier", "payment_terms", "vendor_risk") if name not in profile]
+        missing = [
+            name for name in ("supplier", "payment_terms", "vendor_risk")
+            if name not in profile
+        ]
         if missing:
-            raise ValueError(f"supplier profile {index} is missing: " + ", ".join(missing))
+            raise ValueError(
+                f"supplier profile {index} is missing: " + ", ".join(missing)
+            )
         supplier = str(profile["supplier"]).strip()
         if not supplier:
             raise ValueError(f"supplier profile {index} name cannot be empty.")
@@ -130,15 +141,24 @@ def validate_input(payload):
             raise ValueError(f"duplicate supplier profile: '{supplier}'.")
         profile_names[key] = supplier
         if key not in quote_names:
-            raise ValueError(f"supplier profile '{supplier}' has no matching quotation.")
+            raise ValueError(
+                f"supplier profile '{supplier}' has no matching quotation."
+            )
         if not str(profile["payment_terms"]).strip():
             raise ValueError(f"payment_terms cannot be empty for '{supplier}'.")
-        _validate_vendor_risk(profile["vendor_risk"], context=f"vendor_risk for '{supplier}'")
+        _validate_vendor_risk(
+            profile["vendor_risk"],
+            context=f"vendor_risk for '{supplier}'",
+        )
 
-    missing_profiles = [display_name for key, display_name in quote_names.items() if key not in profile_names]
+    missing_profiles = [
+        display_name for key, display_name in quote_names.items()
+        if key not in profile_names
+    ]
     if missing_profiles:
         raise ValueError(
-            "missing supplier profile(s) for quotation supplier(s): " + ", ".join(missing_profiles)
+            "missing supplier profile(s) for quotation supplier(s): "
+            + ", ".join(missing_profiles)
         )
 
 
@@ -150,7 +170,8 @@ def resolve_tools(tools_root):
         if not path.is_file():
             raise ValueError(
                 f"missing tool '{name}': expected {path}. "
-                "Clone the procurement-tooling repositories side-by-side or pass --tools-root."
+                "Clone the procurement-tooling repositories side-by-side "
+                "or pass --tools-root."
             )
         tools[name] = path
     return tools
@@ -195,29 +216,33 @@ def _normalize_quotes(payload, tools, work_dir):
         raw_path = work_dir / f"quote-{index}-raw.json"
         normalized_path = work_dir / f"quote-{index}-normalized.json"
         write_json(quote, raw_path)
-        run_command([
-            sys.executable,
-            tools["currency-normalizer"],
-            "--quote",
-            raw_path,
-            "--target-currency",
-            target_currency,
-            "--output",
-            normalized_path,
-        ])
+        run_command(
+            [
+                sys.executable,
+                tools["currency-normalizer"],
+                "--quote",
+                raw_path,
+                "--target-currency",
+                target_currency,
+                "--output",
+                normalized_path,
+            ]
+        )
         normalized_quote_paths.append(normalized_path)
     return normalized_quote_paths
 
 
 def _run_rfq(normalized_quote_paths, tools, work_dir):
     rfq_path = work_dir / "rfq.json"
-    run_command([
-        sys.executable,
-        tools["rfqdiff"],
-        *normalized_quote_paths,
-        "--output",
-        rfq_path,
-    ])
+    run_command(
+        [
+            sys.executable,
+            tools["rfqdiff"],
+            *normalized_quote_paths,
+            "--output",
+            rfq_path,
+        ]
+    )
     return rfq_path
 
 
@@ -226,52 +251,60 @@ def _run_supplier_score(profile, tools, scorecard_main, rfq_path, supplier_dir):
     supplier_dir.mkdir(parents=True, exist_ok=True)
 
     payment_path = supplier_dir / "payment.json"
-    run_command([
-        sys.executable,
-        tools["payment-terms-parser"],
-        str(profile["payment_terms"]),
-        "--supplier",
-        supplier,
-        "--output",
-        payment_path,
-    ])
+    run_command(
+        [
+            sys.executable,
+            tools["payment-terms-parser"],
+            str(profile["payment_terms"]),
+            "--supplier",
+            supplier,
+            "--output",
+            payment_path,
+        ]
+    )
     payment_payload = json.loads(payment_path.read_text(encoding="utf-8"))
     commercial_risk = float(
         payment_payload.get("commercial_risk", payment_payload.get("buyer_exposure"))
     )
 
     vendor = profile["vendor_risk"]
-    vendor_payload = run_command([
-        sys.executable,
-        tools["vendor-risk-engine"],
-        supplier,
-        "--on-time-delivery",
-        vendor["on_time_delivery"],
-        "--defect-rate",
-        vendor["defect_rate"],
-        "--prepayment-exposure",
-        commercial_risk,
-        "--compliance-incidents",
-        vendor["compliance_incidents"],
-        "--dependency-share",
-        vendor["dependency_share"],
-        "--json",
-    ], capture_json=True)
+    vendor_payload = run_command(
+        [
+            sys.executable,
+            tools["vendor-risk-engine"],
+            supplier,
+            "--on-time-delivery",
+            vendor["on_time_delivery"],
+            "--defect-rate",
+            vendor["defect_rate"],
+            "--prepayment-exposure",
+            commercial_risk,
+            "--compliance-incidents",
+            vendor["compliance_incidents"],
+            "--dependency-share",
+            vendor["dependency_share"],
+            "--json",
+        ],
+        capture_json=True,
+    )
     vendor_path = supplier_dir / "vendor-risk.json"
     write_json(vendor_payload, vendor_path)
 
-    result = run_command([
-        sys.executable,
-        scorecard_main,
-        supplier,
-        "--rfq-json",
-        rfq_path,
-        "--payment-json",
-        payment_path,
-        "--vendor-risk-json",
-        vendor_path,
-        "--json",
-    ], capture_json=True)
+    result = run_command(
+        [
+            sys.executable,
+            scorecard_main,
+            supplier,
+            "--rfq-json",
+            rfq_path,
+            "--payment-json",
+            payment_path,
+            "--vendor-risk-json",
+            vendor_path,
+            "--json",
+        ],
+        capture_json=True,
+    )
     return result, payment_path, vendor_path
 
 
@@ -300,7 +333,11 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
             "vendor_risk": payload["vendor_risk"],
         }
         result, payment_path, vendor_path = _run_supplier_score(
-            profile, tools, scorecard_main, rfq_path, work_dir
+            profile,
+            tools,
+            scorecard_main,
+            rfq_path,
+            work_dir,
         )
         result["orchestration"] = {
             "tool": "supplier-scorecard-pipeline",
@@ -327,7 +364,11 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
         used_dirs.add(dirname.casefold())
         supplier_dir = suppliers_root / dirname
         result, payment_path, vendor_path = _run_supplier_score(
-            profile, tools, scorecard_main, rfq_path, supplier_dir
+            profile,
+            tools,
+            scorecard_main,
+            rfq_path,
+            supplier_dir,
         )
         results.append(result)
         artifact_map[supplier] = {
@@ -336,13 +377,15 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
         }
 
     ranked = _rank_portfolio(results)
+    portfolio_explanation = explain_portfolio(ranked)
     return {
         "tool": "supplier-scorecard-portfolio",
-        "version": "0.1",
+        "version": "0.2",
         "recommended_supplier": ranked[0]["supplier"],
         "supplier_count": len(ranked),
         "target_currency": target_currency,
         "suppliers": ranked,
+        "explanation": portfolio_explanation,
         "orchestration": {
             "tool": "supplier-scorecard-pipeline",
             "version": PIPELINE_VERSION,
@@ -373,6 +416,15 @@ def print_result(result):
         print(f"Recommended supplier : {result['recommended_supplier']}")
         print(f"Suppliers evaluated  : {result['supplier_count']}")
         print(f"Target currency      : {result['target_currency']}")
+        print(f"Decision reason      : {result['explanation']['summary']}")
+        if result["explanation"]["advantages"]:
+            print("Winner advantages    :")
+            for item in result["explanation"]["advantages"]:
+                print(f"  + {item['reason']}")
+        if result["explanation"]["tradeoffs"]:
+            print("Winner tradeoffs     :")
+            for item in result["explanation"]["tradeoffs"]:
+                print(f"  - {item['reason']}")
         return
 
     print()
@@ -382,6 +434,8 @@ def print_result(result):
     print(f"Composite score      : {result['score']:.2f} / 100")
     print(f"Recommendation       : {result['recommendation']}")
     print(f"Target currency      : {orchestration['target_currency']}")
+    if "explanation" in result:
+        print(f"Decision reason      : {result['explanation']['summary']}")
     print()
     print("Pipeline")
     print("-" * 58)
@@ -394,15 +448,17 @@ def print_result(result):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Run the complete procurement decision pipeline from one JSON input."
+        description=(
+            "Run the complete procurement decision pipeline from one JSON input."
+        )
     )
     parser.add_argument("input", help="Unified procurement pipeline JSON input.")
     parser.add_argument(
         "--tools-root",
         help=(
-            "Directory containing currency-normalizer, rfqdiff, payment-terms-parser "
-            "and vendor-risk-engine repositories. Defaults to the parent directory "
-            "of supplier-scorecard."
+            "Directory containing currency-normalizer, rfqdiff, "
+            "payment-terms-parser and vendor-risk-engine repositories. "
+            "Defaults to the parent directory of supplier-scorecard."
         ),
     )
     parser.add_argument(
