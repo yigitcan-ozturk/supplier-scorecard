@@ -6,10 +6,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from main import explain_portfolio
+from main import apply_policy, explain_portfolio, normalize_policy
 
 
-PIPELINE_VERSION = "0.3"
+PIPELINE_VERSION = "0.4"
 REQUIRED_TOOLS = (
     "currency-normalizer",
     "rfqdiff",
@@ -89,9 +89,13 @@ def validate_input(payload):
         raise ValueError("pipeline input must be a JSON object.")
 
     if "target_currency" not in payload or "quotes" not in payload:
-        missing = [name for name in ("target_currency", "quotes") if name not in payload]
+        missing = [
+            name for name in ("target_currency", "quotes")
+            if name not in payload
+        ]
         raise ValueError("pipeline input is missing: " + ", ".join(missing))
 
+    normalize_policy(payload.get("policy"))
     _, quote_names = _validate_quotes(payload)
     mode = input_mode(payload)
 
@@ -99,19 +103,25 @@ def validate_input(payload):
         required = ("supplier", "payment_terms", "vendor_risk")
         missing = [name for name in required if name not in payload]
         if missing:
-            raise ValueError("pipeline input is missing: " + ", ".join(missing))
+            raise ValueError(
+                "pipeline input is missing: " + ", ".join(missing)
+            )
 
         supplier = str(payload["supplier"]).strip()
         if not supplier:
             raise ValueError("supplier cannot be empty.")
         if _normalize_name(supplier) not in quote_names:
-            raise ValueError(f"quotes do not contain target supplier '{supplier}'.")
+            raise ValueError(
+                f"quotes do not contain target supplier '{supplier}'."
+            )
         if not str(payload["payment_terms"]).strip():
             raise ValueError("payment_terms cannot be empty.")
         _validate_vendor_risk(payload["vendor_risk"])
         return
 
-    if any(name in payload for name in ("supplier", "payment_terms", "vendor_risk")):
+    if any(
+        name in payload for name in ("supplier", "payment_terms", "vendor_risk")
+    ):
         raise ValueError(
             "portfolio mode uses supplier_profiles; do not combine it with "
             "single-supplier fields."
@@ -124,35 +134,46 @@ def validate_input(payload):
     profile_names = {}
     for index, profile in enumerate(profiles, start=1):
         if not isinstance(profile, dict):
-            raise ValueError(f"supplier profile {index} must be a JSON object.")
+            raise ValueError(
+                f"supplier profile {index} must be a JSON object."
+            )
         missing = [
-            name for name in ("supplier", "payment_terms", "vendor_risk")
+            name
+            for name in ("supplier", "payment_terms", "vendor_risk")
             if name not in profile
         ]
         if missing:
             raise ValueError(
-                f"supplier profile {index} is missing: " + ", ".join(missing)
+                f"supplier profile {index} is missing: "
+                + ", ".join(missing)
             )
+
         supplier = str(profile["supplier"]).strip()
         if not supplier:
-            raise ValueError(f"supplier profile {index} name cannot be empty.")
+            raise ValueError(
+                f"supplier profile {index} name cannot be empty."
+            )
         key = _normalize_name(supplier)
         if key in profile_names:
             raise ValueError(f"duplicate supplier profile: '{supplier}'.")
         profile_names[key] = supplier
+
         if key not in quote_names:
             raise ValueError(
                 f"supplier profile '{supplier}' has no matching quotation."
             )
         if not str(profile["payment_terms"]).strip():
-            raise ValueError(f"payment_terms cannot be empty for '{supplier}'.")
+            raise ValueError(
+                f"payment_terms cannot be empty for '{supplier}'."
+            )
         _validate_vendor_risk(
             profile["vendor_risk"],
             context=f"vendor_risk for '{supplier}'",
         )
 
     missing_profiles = [
-        display_name for key, display_name in quote_names.items()
+        display_name
+        for key, display_name in quote_names.items()
         if key not in profile_names
     ]
     if missing_profiles:
@@ -185,14 +206,21 @@ def run_command(command, *, capture_json=False):
         check=False,
     )
     if process.returncode != 0:
-        detail = process.stderr.strip() or process.stdout.strip() or "unknown error"
-        raise RuntimeError(f"command failed: {' '.join(map(str, command))}\n{detail}")
+        detail = (
+            process.stderr.strip()
+            or process.stdout.strip()
+            or "unknown error"
+        )
+        raise RuntimeError(
+            f"command failed: {' '.join(map(str, command))}\n{detail}"
+        )
     if capture_json:
         try:
             return json.loads(process.stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
-                "command did not return valid JSON: " + " ".join(map(str, command))
+                "command did not return valid JSON: "
+                + " ".join(map(str, command))
             ) from exc
     return process.stdout
 
@@ -205,17 +233,23 @@ def write_json(payload, path):
 
 
 def _safe_dir_name(value):
-    value = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value).strip()).strip("-.")
+    value = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        str(value).strip(),
+    ).strip("-.")
     return value or "supplier"
 
 
 def _normalize_quotes(payload, tools, work_dir):
     target_currency = str(payload["target_currency"]).upper()
     normalized_quote_paths = []
+
     for index, quote in enumerate(payload["quotes"], start=1):
         raw_path = work_dir / f"quote-{index}-raw.json"
         normalized_path = work_dir / f"quote-{index}-normalized.json"
         write_json(quote, raw_path)
+
         run_command(
             [
                 sys.executable,
@@ -229,6 +263,7 @@ def _normalize_quotes(payload, tools, work_dir):
             ]
         )
         normalized_quote_paths.append(normalized_path)
+
     return normalized_quote_paths
 
 
@@ -246,7 +281,14 @@ def _run_rfq(normalized_quote_paths, tools, work_dir):
     return rfq_path
 
 
-def _run_supplier_score(profile, tools, scorecard_main, rfq_path, supplier_dir):
+def _run_supplier_score(
+    profile,
+    tools,
+    scorecard_main,
+    rfq_path,
+    supplier_dir,
+    policy,
+):
     supplier = str(profile["supplier"]).strip()
     supplier_dir.mkdir(parents=True, exist_ok=True)
 
@@ -262,9 +304,14 @@ def _run_supplier_score(profile, tools, scorecard_main, rfq_path, supplier_dir):
             payment_path,
         ]
     )
-    payment_payload = json.loads(payment_path.read_text(encoding="utf-8"))
+    payment_payload = json.loads(
+        payment_path.read_text(encoding="utf-8")
+    )
     commercial_risk = float(
-        payment_payload.get("commercial_risk", payment_payload.get("buyer_exposure"))
+        payment_payload.get(
+            "commercial_risk",
+            payment_payload.get("buyer_exposure"),
+        )
     )
 
     vendor = profile["vendor_risk"]
@@ -305,26 +352,109 @@ def _run_supplier_score(profile, tools, scorecard_main, rfq_path, supplier_dir):
         ],
         capture_json=True,
     )
+
+    result = apply_policy(
+        result,
+        compliance_incidents=vendor["compliance_incidents"],
+        policy=policy,
+    )
     return result, payment_path, vendor_path
 
 
 def _rank_portfolio(results):
     ranked = sorted(
         results,
-        key=lambda item: (-float(item["score"]), str(item["supplier"]).casefold()),
+        key=lambda item: (
+            -float(item["score"]),
+            str(item["supplier"]).casefold(),
+        ),
     )
     for rank, result in enumerate(ranked, start=1):
         result["rank"] = rank
     return ranked
 
 
+def _policy_selection(ranked):
+    score_leader = ranked[0]
+    eligible = [
+        item for item in ranked
+        if item["policy"]["auto_eligible"]
+    ]
+    recommended = eligible[0] if eligible else None
+
+    excluded = [
+        {
+            "supplier": item["supplier"],
+            "score": item["score"],
+            "policy_status": item["policy"]["status"],
+            "final_decision": item["final_decision"],
+            "reasons": [
+                trigger["reason"]
+                for trigger in item["policy"]["triggers"]
+            ],
+        }
+        for item in ranked
+        if not item["policy"]["auto_eligible"]
+    ]
+
+    if recommended is None:
+        summary = (
+            "No supplier is auto-eligible after score and policy gates; "
+            "automatic recommendation is withheld."
+        )
+    elif recommended["supplier"] == score_leader["supplier"]:
+        summary = (
+            f"{recommended['supplier']} is the highest-scoring supplier "
+            "and passes all automatic policy gates."
+        )
+    else:
+        leader_reason = (
+            score_leader["policy"]["triggers"][0]["reason"]
+            if score_leader["policy"]["triggers"]
+            else (
+                f"its score recommendation is "
+                f"{score_leader['recommendation']}."
+            )
+        )
+        summary = (
+            f"{score_leader['supplier']} is the score leader at "
+            f"{score_leader['score']:.2f}/100 but is not auto-eligible "
+            f"because {leader_reason[0].lower() + leader_reason[1:]} "
+            f"{recommended['supplier']} is the highest-scoring supplier "
+            "that passes all automatic gates."
+        )
+
+    return {
+        "top_scoring_supplier": score_leader["supplier"],
+        "recommended_supplier": (
+            recommended["supplier"] if recommended else None
+        ),
+        "status": (
+            "AUTO-RECOMMENDED"
+            if recommended
+            else "NO AUTO-APPROVED SUPPLIER"
+        ),
+        "summary": summary,
+        "excluded_from_auto_recommendation": excluded,
+    }
+
+
 def run_pipeline(payload, tools, scorecard_main, work_dir):
     target_currency = str(payload["target_currency"]).upper()
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
+    policy = normalize_policy(payload.get("policy"))
 
-    normalized_quote_paths = _normalize_quotes(payload, tools, work_dir)
-    rfq_path = _run_rfq(normalized_quote_paths, tools, work_dir)
+    normalized_quote_paths = _normalize_quotes(
+        payload,
+        tools,
+        work_dir,
+    )
+    rfq_path = _run_rfq(
+        normalized_quote_paths,
+        tools,
+        work_dir,
+    )
 
     if input_mode(payload) == "single":
         profile = {
@@ -338,6 +468,7 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
             scorecard_main,
             rfq_path,
             work_dir,
+            policy,
         )
         result["orchestration"] = {
             "tool": "supplier-scorecard-pipeline",
@@ -356,12 +487,17 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
     artifact_map = {}
     suppliers_root = work_dir / "suppliers"
     used_dirs = set()
-    for index, profile in enumerate(payload["supplier_profiles"], start=1):
+
+    for index, profile in enumerate(
+        payload["supplier_profiles"],
+        start=1,
+    ):
         supplier = str(profile["supplier"]).strip()
         dirname = _safe_dir_name(supplier)
         if dirname.casefold() in used_dirs:
             dirname = f"{dirname}-{index}"
         used_dirs.add(dirname.casefold())
+
         supplier_dir = suppliers_root / dirname
         result, payment_path, vendor_path = _run_supplier_score(
             profile,
@@ -369,6 +505,7 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
             scorecard_main,
             rfq_path,
             supplier_dir,
+            policy,
         )
         results.append(result)
         artifact_map[supplier] = {
@@ -377,15 +514,21 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
         }
 
     ranked = _rank_portfolio(results)
-    portfolio_explanation = explain_portfolio(ranked)
+    score_explanation = explain_portfolio(ranked)
+    policy_decision = _policy_selection(ranked)
+
     return {
         "tool": "supplier-scorecard-portfolio",
-        "version": "0.2",
-        "recommended_supplier": ranked[0]["supplier"],
+        "version": "0.3",
+        "recommended_supplier": policy_decision["recommended_supplier"],
+        "top_scoring_supplier": policy_decision["top_scoring_supplier"],
+        "decision_status": policy_decision["status"],
         "supplier_count": len(ranked),
         "target_currency": target_currency,
+        "policy": policy,
         "suppliers": ranked,
-        "explanation": portfolio_explanation,
+        "explanation": score_explanation,
+        "policy_decision": policy_decision,
         "orchestration": {
             "tool": "supplier-scorecard-pipeline",
             "version": PIPELINE_VERSION,
@@ -401,44 +544,114 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
 
 def print_result(result):
     orchestration = result["orchestration"]
+
     if orchestration.get("mode") == "portfolio":
         print()
-        print(f"PROCUREMENT PORTFOLIO PIPELINE v{PIPELINE_VERSION}")
-        print("-" * 84)
-        print(f"{'#':>3} {'Supplier':30} {'Score':>8} {'Recommendation':>18}")
-        print("-" * 84)
+        print(
+            f"PROCUREMENT PORTFOLIO PIPELINE v{PIPELINE_VERSION}"
+        )
+        print("-" * 116)
+        print(
+            f"{'#':>3} {'Supplier':28} {'Score':>8} "
+            f"{'Score rec.':>12} {'Policy':>10} {'Final':>12}"
+        )
+        print("-" * 116)
+
         for item in result["suppliers"]:
             print(
-                f"{item['rank']:>3} {item['supplier'][:30]:30} "
-                f"{item['score']:8.2f} {item['recommendation']:>18}"
+                f"{item['rank']:>3} "
+                f"{item['supplier'][:28]:28} "
+                f"{item['score']:8.2f} "
+                f"{item['recommendation']:>12} "
+                f"{item['policy']['status']:>10} "
+                f"{item['final_decision']:>12}"
             )
-        print("-" * 84)
-        print(f"Recommended supplier : {result['recommended_supplier']}")
-        print(f"Suppliers evaluated  : {result['supplier_count']}")
-        print(f"Target currency      : {result['target_currency']}")
-        print(f"Decision reason      : {result['explanation']['summary']}")
-        if result["explanation"]["advantages"]:
-            print("Winner advantages    :")
-            for item in result["explanation"]["advantages"]:
-                print(f"  + {item['reason']}")
-        if result["explanation"]["tradeoffs"]:
-            print("Winner tradeoffs     :")
-            for item in result["explanation"]["tradeoffs"]:
-                print(f"  - {item['reason']}")
+
+        print("-" * 116)
+        print(
+            f"Top-scoring supplier : "
+            f"{result['top_scoring_supplier']}"
+        )
+        print(
+            f"Recommended supplier : "
+            f"{result['recommended_supplier'] or 'none'}"
+        )
+        print(
+            f"Decision status      : "
+            f"{result['decision_status']}"
+        )
+        print(
+            f"Suppliers evaluated  : "
+            f"{result['supplier_count']}"
+        )
+        print(
+            f"Target currency      : "
+            f"{result['target_currency']}"
+        )
+        print(
+            f"Score explanation    : "
+            f"{result['explanation']['summary']}"
+        )
+        print(
+            f"Policy decision      : "
+            f"{result['policy_decision']['summary']}"
+        )
+
+        for item in result["suppliers"]:
+            triggers = item["policy"]["triggers"]
+            if triggers:
+                print(
+                    f"{item['supplier']} policy gates:"
+                )
+                for trigger in triggers:
+                    print(
+                        f"  - [{trigger['severity']}] "
+                        f"{trigger['reason']}"
+                    )
         return
 
     print()
-    print(f"PROCUREMENT DECISION PIPELINE v{PIPELINE_VERSION}")
-    print("-" * 58)
+    print(
+        f"PROCUREMENT DECISION PIPELINE v{PIPELINE_VERSION}"
+    )
+    print("-" * 72)
     print(f"Supplier             : {result['supplier']}")
-    print(f"Composite score      : {result['score']:.2f} / 100")
-    print(f"Recommendation       : {result['recommendation']}")
-    print(f"Target currency      : {orchestration['target_currency']}")
-    if "explanation" in result:
-        print(f"Decision reason      : {result['explanation']['summary']}")
+    print(
+        f"Composite score      : "
+        f"{result['score']:.2f} / 100"
+    )
+    print(
+        f"Score recommendation : "
+        f"{result['recommendation']}"
+    )
+    print(
+        f"Policy status        : "
+        f"{result['policy']['status']}"
+    )
+    print(
+        f"Final decision       : "
+        f"{result['final_decision']}"
+    )
+    print(
+        f"Target currency      : "
+        f"{orchestration['target_currency']}"
+    )
+    print(
+        f"Decision reason      : "
+        f"{result['explanation']['summary']}"
+    )
+
+    if result["policy"]["triggers"]:
+        print("Policy gates         :")
+        for trigger in result["policy"]["triggers"]:
+            print(
+                f"  - [{trigger['severity']}] "
+                f"{trigger['reason']}"
+            )
+
     print()
     print("Pipeline")
-    print("-" * 58)
+    print("-" * 72)
     print("currency-normalizer  : completed")
     print("rfqdiff              : completed")
     print("payment-terms-parser : completed")
@@ -449,10 +662,14 @@ def print_result(result):
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
-            "Run the complete procurement decision pipeline from one JSON input."
+            "Run the complete procurement decision pipeline from one "
+            "JSON input, including policy gates."
         )
     )
-    parser.add_argument("input", help="Unified procurement pipeline JSON input.")
+    parser.add_argument(
+        "input",
+        help="Unified procurement pipeline JSON input.",
+    )
     parser.add_argument(
         "--tools-root",
         help=(
@@ -463,13 +680,22 @@ def build_parser():
     )
     parser.add_argument(
         "--work-dir",
-        help="Keep intermediate pipeline JSON artifacts in this directory.",
+        help=(
+            "Keep intermediate pipeline JSON artifacts in this "
+            "directory."
+        ),
     )
     parser.add_argument(
         "--output",
-        help="Write the final supplier-scorecard JSON result to this file.",
+        help=(
+            "Write the final supplier-scorecard JSON result to this file."
+        ),
     )
-    parser.add_argument("--json", action="store_true", help="Print final JSON.")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print final JSON.",
+    )
     return parser
 
 
@@ -492,7 +718,11 @@ def main():
     args = parser.parse_args()
 
     scorecard_dir = Path(__file__).resolve().parent
-    tools_root = Path(args.tools_root).resolve() if args.tools_root else scorecard_dir.parent
+    tools_root = (
+        Path(args.tools_root).resolve()
+        if args.tools_root
+        else scorecard_dir.parent
+    )
     scorecard_main = scorecard_dir / "main.py"
 
     try:
@@ -500,20 +730,44 @@ def main():
         tools = resolve_tools(tools_root)
 
         if args.work_dir:
-            result = run_pipeline(payload, tools, scorecard_main, args.work_dir)
+            result = run_pipeline(
+                payload,
+                tools,
+                scorecard_main,
+                args.work_dir,
+            )
         else:
-            with tempfile.TemporaryDirectory(prefix="supplier-scorecard-") as temp_dir:
-                result = run_pipeline(payload, tools, scorecard_main, temp_dir)
+            with tempfile.TemporaryDirectory(
+                prefix="supplier-scorecard-"
+            ) as temp_dir:
+                result = run_pipeline(
+                    payload,
+                    tools,
+                    scorecard_main,
+                    temp_dir,
+                )
                 _mark_temporary_artifacts(result)
 
         if args.output:
             write_json(result, args.output)
 
-    except (OSError, json.JSONDecodeError, TypeError, ValueError, RuntimeError) as exc:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         parser.error(str(exc))
 
     if args.json:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print(
+            json.dumps(
+                result,
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
     else:
         print_result(result)
 
