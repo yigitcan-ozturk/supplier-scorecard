@@ -8,7 +8,7 @@ from pathlib import Path
 
 from main import apply_policy, explain_portfolio, resolve_profile
 
-PIPELINE_VERSION = "0.6"
+PIPELINE_VERSION = "0.7"
 REQUIRED_TOOLS = (
     "currency-normalizer",
     "rfqdiff",
@@ -50,6 +50,17 @@ def _validate_vendor(vendor, context="vendor_risk"):
     missing = [name for name in VENDOR_FIELDS if name not in vendor]
     if missing:
         raise ValueError(f"{context} is missing: " + ", ".join(missing))
+
+
+def _validate_technical(value, context="technical_compliance"):
+    if value is None:
+        return
+    try:
+        score = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{context} must be between 0 and 100.") from exc
+    if not 0 <= score <= 100:
+        raise ValueError(f"{context} must be between 0 and 100.")
 
 
 def input_mode(payload):
@@ -100,9 +111,10 @@ def validate_input(payload):
         if not str(payload["payment_terms"]).strip():
             raise ValueError("payment_terms cannot be empty.")
         _validate_vendor(payload["vendor_risk"])
+        _validate_technical(payload.get("technical_compliance"))
         return
 
-    if any(name in payload for name in ("supplier", "payment_terms", "vendor_risk")):
+    if any(name in payload for name in ("supplier", "payment_terms", "vendor_risk", "technical_compliance")):
         raise ValueError("portfolio mode uses supplier_profiles; do not combine it with single-supplier fields.")
     profiles = payload.get("supplier_profiles")
     if not isinstance(profiles, list) or not profiles:
@@ -125,6 +137,7 @@ def validate_input(payload):
         if not str(profile["payment_terms"]).strip():
             raise ValueError(f"payment_terms cannot be empty for '{supplier}'.")
         _validate_vendor(profile["vendor_risk"], f"vendor_risk for '{supplier}'")
+        _validate_technical(profile.get("technical_compliance"), f"technical_compliance for '{supplier}'")
         seen[key] = supplier
     missing_profiles = [name for key, name in quote_names.items() if key not in seen]
     if missing_profiles:
@@ -234,6 +247,9 @@ def _run_supplier(profile, tools, scorecard_main, rfq_path, supplier_dir, *, res
         "--vendor-risk-json",
         vendor_path,
     ]
+    if profile.get("technical_compliance") is not None:
+        command += ["--technical-compliance", profile["technical_compliance"]]
+
     source = resolved_profile["source"]
     if source["type"] == "file":
         command += ["--profile-file", source["path"]]
@@ -305,6 +321,7 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
             "supplier": payload["supplier"],
             "payment_terms": payload["payment_terms"],
             "vendor_risk": payload["vendor_risk"],
+            "technical_compliance": payload.get("technical_compliance"),
         }
         result, payment, vendor = _run_supplier(
             profile,
@@ -348,7 +365,7 @@ def run_pipeline(payload, tools, scorecard_main, work_dir):
     policy_decision = _policy_selection(ranked)
     return {
         "tool": "supplier-scorecard-portfolio",
-        "version": "0.5",
+        "version": "0.6",
         "category_profile": resolved["name"],
         "profile": {
             "name": resolved["name"],
