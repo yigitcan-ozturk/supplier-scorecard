@@ -6,11 +6,11 @@ A transparent Python CLI and orchestration layer for turning quotation, payment-
 
 ## What v0.8 adds
 
-v0.8 adds **user-defined procurement profile files**. Teams can now create company-, category- or project-specific scoring and approval rules in a standalone JSON file without editing Python code.
+v0.8 adds **user-defined procurement profile files**. Teams can create company-, category- or project-specific scoring and approval rules in standalone JSON files without editing Python code.
 
 A custom profile defines:
 
-- its own profile name and description
+- profile name and description
 - quotation, commercial and vendor-risk weights
 - commercial/vendor-risk review thresholds
 - compliance review and block thresholds
@@ -59,7 +59,7 @@ Create a standalone profile file such as `profiles/marble-sourcing.json`:
 
 The three weights must total exactly `1.0`. Custom profile files must explicitly contain all policy fields so the approval logic is auditable and does not depend on hidden defaults. Unknown fields are rejected.
 
-Use it directly with the scorecard:
+Use a profile directly with the scorecard:
 
 ```bash
 python main.py "Supplier A" \
@@ -69,11 +69,50 @@ python main.py "Supplier A" \
   --profile-file samples/profiles/marble-sourcing.json
 ```
 
-`--profile-file` and `--category-profile` are mutually exclusive. The JSON result records whether the active profile came from a built-in profile or an external file, including the resolved profile path for auditability.
+`--profile-file` and `--category-profile` are mutually exclusive. JSON output records whether the active profile came from a built-in profile or an external file, including the resolved profile path for auditability.
+
+## Bundled custom profile pack
+
+The repository includes ready-to-edit custom profiles under `samples/profiles/`:
+
+| Profile file | Quotation | Commercial | Vendor risk | Min. auto score | Intended use |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `marble-sourcing.json` | 35% | 20% | 45% | 75 | bespoke marble / stone sourcing |
+| `technical-ceramics.json` | 25% | 15% | 60% | 82 | capability- and consistency-sensitive technical ceramics |
+| `gears.json` | 30% | 15% | 55% | 80 | precision gears / drivetrain components |
+| `machinery-capex.json` | 35% | 30% | 35% | 82 | machinery and capital-equipment purchases |
+
+Examples:
+
+```bash
+python main.py "Supplier A" \
+  --quotation-score 86 \
+  --commercial-risk 20 \
+  --vendor-risk 30 \
+  --profile-file samples/profiles/technical-ceramics.json
+```
+
+```bash
+python main.py "Supplier A" \
+  --quotation-score 90 \
+  --commercial-risk 25 \
+  --vendor-risk 35 \
+  --profile-file samples/profiles/gears.json
+```
+
+```bash
+python main.py "Supplier A" \
+  --quotation-score 88 \
+  --commercial-risk 35 \
+  --vendor-risk 25 \
+  --profile-file samples/profiles/machinery-capex.json
+```
+
+These files are examples, not universal procurement standards. Their values are deliberately explicit so teams can review and adapt them to actual category risk appetite, approval authority and supplier-management policy.
 
 ## Category-aware scoring
 
-Manual scoring:
+Manual scoring with a built-in profile:
 
 ```bash
 python main.py "Supplier A" \
@@ -100,7 +139,7 @@ procurement-tools/
 └── supplier-scorecard/
 ```
 
-Then run:
+Run a built-in category profile:
 
 ```bash
 python pipeline.py samples/procurement-category-input.json
@@ -130,7 +169,7 @@ A pipeline can also reference a custom file:
 }
 ```
 
-Paths inside the pipeline input are resolved relative to the input JSON file, so the sample works directly:
+Paths inside the pipeline input are resolved relative to the input JSON file, so the bundled sample works directly:
 
 ```bash
 python pipeline.py samples/procurement-custom-profile-input.json
@@ -204,7 +243,7 @@ Unspecified rules continue to come from the selected category profile.
 
 ## Portfolio behavior
 
-Portfolio mode still separates **score ranking** from **automatic recommendation**. If the score leader fails the active category policy, the pipeline selects the highest-scoring supplier that is auto-eligible. If no supplier passes, the recommendation is withheld.
+Portfolio mode separates **score ranking** from **automatic recommendation**. If the score leader fails the active category policy, the pipeline selects the highest-scoring supplier that is auto-eligible. If no supplier passes, the recommendation is withheld.
 
 Output includes:
 
@@ -307,7 +346,7 @@ GitHub Actions runs the suite on Python 3.11, 3.12 and 3.13.
 
 ## Status
 
-Current version: **v0.8**. The project supports built-in and user-defined JSON procurement profiles, category-aware scoring, policy gates, explainability, and end-to-end portfolio orchestration without third-party runtime dependencies.
+Current version: **v0.8**. The project supports built-in and user-defined JSON procurement profiles, a bundled editable profile pack, category-aware scoring, policy gates, explainability, and end-to-end portfolio orchestration without third-party runtime dependencies.
 
 ## License
 
