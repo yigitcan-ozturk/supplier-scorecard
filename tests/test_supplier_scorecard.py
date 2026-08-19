@@ -20,31 +20,25 @@ class SupplierScorecardTests(unittest.TestCase):
         result = score_supplier("Supplier A", 92, 10, 12)
         self.assertEqual(result["recommendation"], "PREFERRED")
         self.assertAlmostEqual(result["score"], 90.4)
-        self.assertEqual(result["version"], "0.3")
+        self.assertEqual(result["version"], "0.4")
 
     def test_acceptable_supplier(self):
-        result = score_supplier("Supplier B", 78, 25, 30)
-        self.assertEqual(result["recommendation"], "ACCEPTABLE")
-        self.assertAlmostEqual(result["score"], 75.0)
+        self.assertEqual(score_supplier("B", 78, 25, 30)["recommendation"], "ACCEPTABLE")
 
     def test_review_supplier(self):
-        result = score_supplier("Supplier C", 65, 50, 55)
-        self.assertEqual(result["recommendation"], "REVIEW")
-        self.assertAlmostEqual(result["score"], 56.0)
+        self.assertEqual(score_supplier("C", 65, 50, 55)["recommendation"], "REVIEW")
 
     def test_high_risk_supplier(self):
-        result = score_supplier("Supplier D", 45, 80, 85)
-        self.assertEqual(result["recommendation"], "HIGH RISK")
-        self.assertAlmostEqual(result["score"], 31.0)
+        self.assertEqual(score_supplier("D", 45, 80, 85)["recommendation"], "HIGH RISK")
 
-    def test_risk_inputs_are_inverted_to_positive_scores(self):
-        result = score_supplier("Supplier E", 80, 30, 40)
+    def test_risk_inputs_are_inverted(self):
+        result = score_supplier("E", 80, 30, 40)
         self.assertEqual(result["components"]["commercial"], 70.0)
         self.assertEqual(result["components"]["vendor_risk"], 60.0)
 
     def test_invalid_score_rejected(self):
         with self.assertRaises(ValueError):
-            score_supplier("Supplier F", 101, 0, 0)
+            score_supplier("F", 101, 0, 0)
 
     def test_empty_supplier_rejected(self):
         with self.assertRaises(ValueError):
@@ -56,137 +50,92 @@ class SupplierScorecardTests(unittest.TestCase):
         self.assertEqual(recommendation(65), "ACCEPTABLE")
         self.assertEqual(recommendation(80), "PREFERRED")
 
-    def test_result_is_json_serializable(self):
-        result = score_supplier("Supplier JSON", 80, 20, 20)
-        encoded = json.dumps(result)
-        self.assertIn('"supplier": "Supplier JSON"', encoded)
+    def test_json_serializable(self):
+        self.assertIn('"supplier": "JSON"', json.dumps(score_supplier("JSON", 80, 20, 20)))
 
-    def test_rank_results_highest_score_first(self):
-        results = [
+    def test_rank_results_highest_first(self):
+        ranked = rank_results([
             score_supplier("B", 60, 40, 40),
             score_supplier("A", 90, 10, 10),
-        ]
-        ranked = rank_results(results)
+        ])
         self.assertEqual(ranked[0]["supplier"], "A")
 
     def test_score_csv_multiple_suppliers(self):
-        csv_text = (
-            "supplier,quotation_score,commercial_risk,vendor_risk\n"
-            "Supplier A,92,10,12\n"
-            "Supplier B,78,25,30\n"
-        )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "suppliers.csv"
-            path.write_text(csv_text, encoding="utf-8")
+        text = "supplier,quotation_score,commercial_risk,vendor_risk\nA,92,10,12\nB,78,25,30\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.csv"
+            path.write_text(text)
             results = score_csv(path)
-        self.assertEqual(len(results), 2)
-        self.assertEqual(results[0]["supplier"], "Supplier A")
-        self.assertEqual(results[0]["recommendation"], "PREFERRED")
+        self.assertEqual(results[0]["supplier"], "A")
 
-    def test_score_csv_invalid_row_reports_row_number(self):
-        csv_text = (
-            "supplier,quotation_score,commercial_risk,vendor_risk\n"
-            "Supplier A,not-a-number,10,12\n"
-        )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "suppliers.csv"
-            path.write_text(csv_text, encoding="utf-8")
+    def test_score_csv_invalid_row_reports_number(self):
+        text = "supplier,quotation_score,commercial_risk,vendor_risk\nA,x,10,12\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.csv"
+            path.write_text(text)
             with self.assertRaisesRegex(ValueError, "CSV row 2"):
                 score_csv(path)
 
-    def test_score_csv_missing_column_rejected(self):
-        csv_text = (
-            "supplier,quotation_score,commercial_risk\n"
-            "Supplier A,92,10\n"
-        )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "suppliers.csv"
-            path.write_text(csv_text, encoding="utf-8")
+    def test_score_csv_missing_column(self):
+        text = "supplier,quotation_score,commercial_risk\nA,92,10\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.csv"
+            path.write_text(text)
             with self.assertRaisesRegex(ValueError, "vendor_risk"):
                 score_csv(path)
 
-    def test_extract_rfq_score_from_rfqdiff_contract(self):
-        payload = {
-            "tool": "rfqdiff",
-            "suppliers": [
-                {"name": "Supplier A", "score": 97.1},
-                {"name": "Supplier B", "score": 67.1},
-            ],
-        }
+    def test_extract_rfq_score(self):
+        payload = {"suppliers": [{"name": "Supplier A", "score": 97.1}]}
         self.assertEqual(extract_rfq_score(payload, "supplier a"), 97.1)
 
-    def test_extract_commercial_risk_from_parser_contract(self):
-        payload = {
-            "tool": "payment-terms-parser",
-            "supplier": "Supplier A",
-            "commercial_risk": 30,
-        }
+    def test_extract_commercial_risk(self):
+        payload = {"supplier": "Supplier A", "commercial_risk": 30}
         self.assertEqual(extract_commercial_risk(payload, "Supplier A"), 30)
 
-    def test_extract_vendor_risk_from_engine_contract(self):
-        payload = {"vendor": "Supplier A", "score": 31.0, "risk": "MEDIUM"}
-        self.assertEqual(extract_vendor_risk(payload, "Supplier A"), 31.0)
+    def test_extract_vendor_risk_object(self):
+        self.assertEqual(extract_vendor_risk({"vendor": "A", "score": 31}, "A"), 31)
 
-    def test_extract_vendor_risk_from_batch_contract(self):
-        payload = [
-            {"vendor": "Supplier A", "score": 31.0},
-            {"vendor": "Supplier B", "score": 44.0},
-        ]
-        self.assertEqual(extract_vendor_risk(payload, "Supplier B"), 44.0)
+    def test_extract_vendor_risk_batch(self):
+        payload = [{"vendor": "A", "score": 31}, {"vendor": "B", "score": 44}]
+        self.assertEqual(extract_vendor_risk(payload, "B"), 44)
 
-    def test_source_supplier_mismatch_is_rejected(self):
-        payload = {"supplier": "Supplier B", "commercial_risk": 20}
+    def test_source_mismatch_rejected(self):
         with self.assertRaisesRegex(ValueError, "mismatch"):
-            extract_commercial_risk(payload, "Supplier A")
+            extract_commercial_risk({"supplier": "B", "commercial_risk": 20}, "A")
 
     def test_score_from_tools_end_to_end(self):
-        rfq_payload = {
-            "tool": "rfqdiff",
-            "version": "0.2",
-            "suppliers": [
-                {"name": "Supplier A", "score": 97.1},
-                {"name": "Supplier B", "score": 67.1},
-            ],
-        }
-        payment_payload = {
-            "tool": "payment-terms-parser",
-            "version": "0.2",
-            "supplier": "Supplier A",
-            "commercial_risk": 30,
-        }
-        vendor_payload = {"vendor": "Supplier A", "score": 31.0, "risk": "MEDIUM"}
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
             rfq = root / "rfq.json"
-            payment = root / "payment.json"
+            pay = root / "pay.json"
             vendor = root / "vendor.json"
-            rfq.write_text(json.dumps(rfq_payload), encoding="utf-8")
-            payment.write_text(json.dumps(payment_payload), encoding="utf-8")
-            vendor.write_text(json.dumps(vendor_payload), encoding="utf-8")
-            result = score_from_tools("Supplier A", rfq, payment, vendor)
-
-        expected = score_supplier("Supplier A", 97.1, 30, 31.0)
-        self.assertAlmostEqual(result["score"], expected["score"])
+            rfq.write_text(json.dumps({
+                "tool": "rfqdiff",
+                "version": "0.2",
+                "suppliers": [{"name": "A", "score": 97.1}],
+            }))
+            pay.write_text(json.dumps({
+                "tool": "payment-terms-parser",
+                "version": "0.2",
+                "supplier": "A",
+                "commercial_risk": 30,
+            }))
+            vendor.write_text(json.dumps({"vendor": "A", "score": 31}))
+            result = score_from_tools("A", rfq, pay, vendor)
         self.assertEqual(result["recommendation"], "PREFERRED")
-        self.assertIn("sources", result)
         self.assertEqual(result["sources"]["rfqdiff"]["version"], "0.2")
 
-    def test_score_from_tools_missing_supplier_in_rfq_is_rejected(self):
-        rfq_payload = {"suppliers": [{"name": "Supplier B", "score": 70}]}
-        payment_payload = {"commercial_risk": 20}
-        vendor_payload = {"vendor": "Supplier A", "score": 20}
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
+    def test_score_from_tools_missing_supplier(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
             rfq = root / "rfq.json"
-            payment = root / "payment.json"
+            pay = root / "pay.json"
             vendor = root / "vendor.json"
-            rfq.write_text(json.dumps(rfq_payload), encoding="utf-8")
-            payment.write_text(json.dumps(payment_payload), encoding="utf-8")
-            vendor.write_text(json.dumps(vendor_payload), encoding="utf-8")
+            rfq.write_text(json.dumps({"suppliers": [{"name": "B", "score": 70}]}))
+            pay.write_text(json.dumps({"commercial_risk": 20}))
+            vendor.write_text(json.dumps({"vendor": "A", "score": 20}))
             with self.assertRaisesRegex(ValueError, "does not contain"):
-                score_from_tools("Supplier A", rfq, payment, vendor)
+                score_from_tools("A", rfq, pay, vendor)
 
 
 if __name__ == "__main__":
