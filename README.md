@@ -4,14 +4,19 @@ A transparent Python CLI and orchestration layer for turning quotation, payment-
 
 [![Tests](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml/badge.svg)](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml)
 
-## What v0.7 adds
+## What v0.8 adds
 
-v0.7 introduces **category-specific procurement profiles**. The same supplier data can now be evaluated differently depending on the sourcing context. Each profile defines both:
+v0.8 adds **user-defined procurement profile files**. Teams can now create company-, category- or project-specific scoring and approval rules in a standalone JSON file without editing Python code.
 
-- composite score weights for quotation, commercial risk and vendor risk
-- policy/approval gates for commercial exposure, vendor risk, compliance incidents and minimum automatic-approval score
+A custom profile defines:
 
-The default remains `general-procurement`, so existing commands keep the same scoring behavior unless a profile is selected.
+- its own profile name and description
+- quotation, commercial and vendor-risk weights
+- commercial/vendor-risk review thresholds
+- compliance review and block thresholds
+- minimum score required for automatic approval
+
+Built-in category profiles remain available and the default is still `general-procurement`.
 
 ## Built-in category profiles
 
@@ -23,11 +28,48 @@ The default remains `general-procurement`, so existing commands keep the same sc
 | `single-source` | 30% | 20% | 50% | 80 | dependency-heavy sourcing |
 | `high-value-capex` | 40% | 30% | 30% | 80 | capital expenditure / approval-heavy buying |
 
-List the active profiles from the CLI:
+List the active built-in profiles from the CLI:
 
 ```bash
 python main.py --list-profiles
 ```
+
+## Custom JSON profiles
+
+Create a standalone profile file such as `profiles/marble-sourcing.json`:
+
+```json
+{
+  "name": "marble-sourcing",
+  "description": "Custom profile for bespoke marble and stone sourcing.",
+  "weights": {
+    "quotation": 0.35,
+    "commercial": 0.20,
+    "vendor_risk": 0.45
+  },
+  "policy": {
+    "commercial_review_threshold": 65,
+    "vendor_review_threshold": 60,
+    "compliance_review_incidents": 1,
+    "compliance_block_incidents": 2,
+    "minimum_auto_score": 75
+  }
+}
+```
+
+The three weights must total exactly `1.0`. Custom profile files must explicitly contain all policy fields so the approval logic is auditable and does not depend on hidden defaults. Unknown fields are rejected.
+
+Use it directly with the scorecard:
+
+```bash
+python main.py "Supplier A" \
+  --quotation-score 88 \
+  --commercial-risk 20 \
+  --vendor-risk 35 \
+  --profile-file samples/profiles/marble-sourcing.json
+```
+
+`--profile-file` and `--category-profile` are mutually exclusive. The JSON result records whether the active profile came from a built-in profile or an external file, including the resolved profile path for auditability.
 
 ## Category-aware scoring
 
@@ -76,6 +118,30 @@ The input selects the profile once:
 ```
 
 That profile is applied consistently to every supplier in the RFQ.
+
+A pipeline can also reference a custom file:
+
+```json
+{
+  "profile_file": "profiles/marble-sourcing.json",
+  "target_currency": "EUR",
+  "quotes": [],
+  "supplier_profiles": []
+}
+```
+
+Paths inside the pipeline input are resolved relative to the input JSON file, so the sample works directly:
+
+```bash
+python pipeline.py samples/procurement-custom-profile-input.json
+```
+
+A command-line custom profile can override the profile selection in an input file:
+
+```bash
+python pipeline.py procurement-input.json \
+  --profile-file company-profiles/technical-ceramics.json
+```
 
 ## Procurement decision flow
 
@@ -145,7 +211,8 @@ Output includes:
 - `top_scoring_supplier`
 - `recommended_supplier`
 - `decision_status`
-- selected `category_profile`
+- selected profile name
+- profile source (`builtin` or `file`)
 - active profile weights and policy
 - ranked supplier scorecards
 - policy exclusions and reasons
@@ -232,15 +299,15 @@ GitHub Actions runs the suite on Python 3.11, 3.12 and 3.13.
 
 ## Roadmap
 
-- User-defined profile files
 - Technical-compliance score as a fourth composite component
 - Approval workflow / sign-off metadata
 - Historical supplier trend scoring
 - Export ranked decision packs to CSV/JSON
+- Profile versioning and governance metadata
 
 ## Status
 
-Current version: **v0.7**. The project now supports category-specific scoring and approval policy profiles while preserving manual, CSV, connected-JSON, single-supplier and portfolio orchestration modes.
+Current version: **v0.8**. The project supports built-in and user-defined JSON procurement profiles, category-aware scoring, policy gates, explainability, and end-to-end portfolio orchestration without third-party runtime dependencies.
 
 ## License
 
