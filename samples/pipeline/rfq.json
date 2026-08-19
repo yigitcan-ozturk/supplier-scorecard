@@ -1,0 +1,29 @@
+{
+  "tool": "rfqdiff",
+  "version": "0.2",
+  "currency": "EUR",
+  "recommended_supplier": "Supplier A",
+  "suppliers": [
+    {
+      "name": "Supplier A",
+      "currency": "EUR",
+      "price": 84200,
+      "lead_time_weeks": 8,
+      "payment_days": 30,
+      "score": 97.1
+    },
+    {
+      "name": "Supplier B",
+      "currency": "EUR",
+      "price": 79400,
+      "lead_time_weeks": 14,
+      "payment_days": 0,
+      "score": 67.1
+    }
+  ],
+  "weights": {
+    "price": 0.5,
+    "lead_time": 0.3,
+    "payment_terms": 0.2
+  }
+}
