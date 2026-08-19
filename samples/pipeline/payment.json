@@ -1,0 +1,14 @@
+{
+  "tool": "payment-terms-parser",
+  "version": "0.2",
+  "supplier": "Supplier A",
+  "original": "30% advance, 70% after delivery",
+  "type": "post_delivery",
+  "advance_percent": 30.0,
+  "before_shipment_percent": 0,
+  "after_delivery_percent": 70.0,
+  "net_days": null,
+  "buyer_exposure": 30.0,
+  "commercial_risk": 30.0,
+  "risk": "MEDIUM"
+}
