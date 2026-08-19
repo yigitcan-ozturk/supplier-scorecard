@@ -1,10 +1,11 @@
 {
   "name": "marble-sourcing",
-  "description": "Custom profile for bespoke marble and stone sourcing, emphasizing execution/vendor risk while retaining commercial discipline.",
+  "description": "Custom profile for bespoke marble and stone sourcing, balancing technical/material compliance with execution/vendor risk.",
   "weights": {
-    "quotation": 0.35,
-    "commercial": 0.20,
-    "vendor_risk": 0.45
+    "quotation": 0.2625,
+    "commercial": 0.15,
+    "vendor_risk": 0.3375,
+    "technical": 0.25
   },
   "policy": {
     "commercial_review_threshold": 65,
