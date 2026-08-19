@@ -26,7 +26,8 @@
         "defect_rate": 1.5,
         "compliance_incidents": 0,
         "dependency_share": 30
-      }
+      },
+      "technical_compliance": 96
     },
     {
       "supplier": "Supplier B",
@@ -36,7 +37,8 @@
         "defect_rate": 3,
         "compliance_incidents": 1,
         "dependency_share": 55
-      }
+      },
+      "technical_compliance": 72
     }
   ]
 }
