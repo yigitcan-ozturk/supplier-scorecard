@@ -3,12 +3,13 @@
 **Explainable supplier decision infrastructure for engineering procurement.**
 
 [![Tests](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml/badge.svg)](https://github.com/yigitcan-ozturk/supplier-scorecard/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/yigitcan-ozturk/supplier-scorecard)](https://github.com/yigitcan-ozturk/supplier-scorecard/releases)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 `supplier-scorecard` combines quotation competitiveness, payment exposure, supplier risk and optional technical-compliance evidence into transparent, policy-aware supplier decisions.
 
-> **Status: v1.0 stable.** The public scoring model and orchestration contract are intentionally explicit and reviewable. The tool supports both installed CLI usage and a stable Python import namespace.
+> **Latest stable release: v1.0.0.** The public scoring model and orchestration contract are intentionally explicit and reviewable. The tool supports both installed CLI usage and a stable Python import namespace.
 
 `bidlint` is the technical-compliance source in the wider toolchain; commercial scoring, payment exposure and supplier risk remain independently inspectable rather than being hidden inside one opaque model.
 
@@ -16,12 +17,10 @@
 
 Requirements: Python 3.11+.
 
-From a source checkout:
+Install the exact stable **v1.0.0** release directly from GitHub — no repository clone required:
 
 ```bash
-git clone https://github.com/yigitcan-ozturk/supplier-scorecard.git
-cd supplier-scorecard
-python -m pip install .
+python -m pip install "supplier-scorecard @ git+https://github.com/yigitcan-ozturk/supplier-scorecard.git@v1.0.0"
 ```
 
 Verify the installed commands:
@@ -31,7 +30,7 @@ supplier-scorecard --list-profiles
 supplier-scorecard-pipeline --help
 ```
 
-The repository is package-ready, but a PyPI release is not claimed until the package is actually published there.
+A PyPI release is not claimed until the package is actually published there.
 
 ## Quick start
 
@@ -207,12 +206,16 @@ No third-party runtime dependencies are required.
 
 ## Development
 
+For development from source:
+
 ```bash
+git clone https://github.com/yigitcan-ozturk/supplier-scorecard.git
+cd supplier-scorecard
 python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-See [`CHANGELOG.md`](CHANGELOG.md) for project history and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the v1.0 release summary.
+See [`CHANGELOG.md`](CHANGELOG.md), [`RELEASE_NOTES.md`](RELEASE_NOTES.md) and the [GitHub Releases](https://github.com/yigitcan-ozturk/supplier-scorecard/releases) page for project history.
 
 ## Contributing
 
