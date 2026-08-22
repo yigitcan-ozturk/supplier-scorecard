@@ -2,6 +2,16 @@
 
 All notable project milestones are summarized here.
 
+## Unreleased
+
+### Packaging and distribution
+
+- Added `pyproject.toml` metadata for an installable Python distribution.
+- Added the stable `supplier_scorecard` Python import namespace.
+- Added `supplier-scorecard` and `supplier-scorecard-pipeline` console entry points.
+- Expanded CI to build and install wheels across Python 3.11, 3.12 and 3.13 and smoke-test the installed commands.
+- Kept `main.py` and `pipeline.py` source-checkout workflows backward compatible.
+
 ## [1.0] - 2026-08-19
 
 ### Stable release
