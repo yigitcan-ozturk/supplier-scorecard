@@ -1,0 +1,76 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source and package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Stable releases must be dispatched from main; got $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+          VERSION="$(python3 - <<'PY'
+          import re
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          version = data["project"]["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+              raise SystemExit(f"Refusing to release non-stable version: {version}")
+          print(version)
+          PY
+          )"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create stable GitHub release when missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="v${VERSION}"
+          git fetch --force --tags origin
+
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            TAG_SHA="$(git rev-list -n 1 "$TAG")"
+            if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+              echo "::error::${TAG} already exists at ${TAG_SHA}, but release commit is ${GITHUB_SHA}."
+              exit 1
+            fi
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists at the expected commit; nothing to do."
+            exit 0
+          fi
+
+          if [[ -f RELEASE_NOTES.md ]]; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "supplier-scorecard $TAG" \
+              --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "supplier-scorecard $TAG" \
+              --generate-notes
+          fi
