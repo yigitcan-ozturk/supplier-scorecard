@@ -197,7 +197,9 @@ CI runs on Python 3.11, 3.12 and 3.13 and validates:
 
 - the existing source-level unit test suite;
 - the public `supplier_scorecard` Python namespace;
-- wheel construction and installation;
+- wheel and source-distribution construction;
+- package metadata with `twine check`;
+- installation of the built wheel;
 - installed `supplier-scorecard` CLI execution;
 - installed `supplier-scorecard-pipeline` CLI execution.
 
@@ -211,6 +213,10 @@ python -m unittest discover -s tests -v
 ```
 
 See [`CHANGELOG.md`](CHANGELOG.md) for project history and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the v1.0 release summary.
+
+## Contributing
+
+External contributions are welcome when they preserve deterministic scoring, explicit policy behavior and public-contract clarity. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and use the structured issue templates for reproducible bugs or deliberately scoped feature requests. Do not include confidential supplier, quotation or project data in public issues, fixtures or pull requests.
 
 ## Scope
 
