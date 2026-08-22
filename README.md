@@ -6,9 +6,11 @@ A transparent Python procurement decision engine that combines quotation, paymen
 
 **Status: v1.0 stable.** The scoring and orchestration scope is intentionally complete for this portfolio project. v1.0 freezes the public decision model established through v0.9 and focuses on a clear, auditable interface rather than adding more features.
 
+> `supplier-scorecard` is the procurement decision layer in an explainable engineering toolchain. [`bidlint`](https://github.com/yigitcan-ozturk/bidlint) supplies the technical-compliance signal; the commercial and risk tools remain independently inspectable.
+
 ## What it does
 
-`supplier-scorecard` is the decision layer for a small procurement-tooling suite. It can:
+`supplier-scorecard` can:
 
 - score one supplier or rank a full RFQ portfolio
 - combine quotation competitiveness, commercial/payment risk, vendor risk and optional technical compliance
@@ -18,6 +20,7 @@ A transparent Python procurement decision engine that combines quotation, paymen
 - separate numeric score ranking from automatic approval eligibility
 - explain supplier strengths, warnings, score drivers and winner-vs-runner-up trade-offs
 - orchestrate `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine` from one input file
+- consume versioned technical-compliance hand-off data from `bidlint`
 - emit machine-readable JSON and retain intermediate audit artifacts when requested
 
 No third-party runtime dependencies are required.
@@ -109,7 +112,19 @@ python main.py --csv samples/suppliers.csv
 
 ## End-to-end portfolio pipeline
 
-Clone the five repositories side-by-side:
+The complete toolchain is intentionally split by responsibility:
+
+```text
+currency-normalizer ──> rfqdiff ────────────────┐
+                                                 │
+payment-terms-parser ───────────────────────────┼──> supplier-scorecard
+                                                 │
+vendor-risk-engine ─────────────────────────────┤
+                                                 │
+bidlint ──> technical compliance ───────────────┘
+```
+
+Clone the repositories side-by-side when running the local portfolio pipeline:
 
 ```text
 procurement-tools/
@@ -117,6 +132,7 @@ procurement-tools/
 ├── rfqdiff/
 ├── payment-terms-parser/
 ├── vendor-risk-engine/
+├── bidlint/
 └── supplier-scorecard/
 ```
 
@@ -143,6 +159,8 @@ A portfolio supplier profile can contain:
 ```
 
 The pipeline normalizes quotation currencies, runs RFQ comparison once, evaluates payment and vendor risk for each supplier, applies technical compliance and the selected profile, enforces policy gates, ranks suppliers and returns the highest-scoring auto-eligible recommendation.
+
+For technical bid evaluation, `bidlint` can emit a versioned supplier-scorecard hand-off. A numeric technical-compliance value is only supplied when the technical findings are safe to reduce to that signal; unresolved engineering review remains explicit rather than silently affecting ranking.
 
 Keep intermediate artifacts for audit:
 
@@ -213,7 +231,7 @@ Every supplier result includes deterministic:
 
 Portfolio output also explains why the score leader beat the runner-up and why policy may select a different supplier.
 
-## Procurement tooling suite
+## Engineering procurement toolchain
 
 | Tool | Role |
 | --- | --- |
@@ -221,6 +239,7 @@ Portfolio output also explains why the score leader beat the runner-up and why p
 | [`rfqdiff`](https://github.com/yigitcan-ozturk/rfqdiff) | Compare and score quotations |
 | [`payment-terms-parser`](https://github.com/yigitcan-ozturk/payment-terms-parser) | Convert payment terms into commercial-risk signals |
 | [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score delivery, quality, commercial, compliance and dependency risk |
+| [`bidlint`](https://github.com/yigitcan-ozturk/bidlint) | Produce evidence-backed technical-compliance findings and hand-off data |
 | **[`supplier-scorecard`](https://github.com/yigitcan-ozturk/supplier-scorecard)** | Combine commercial, risk and technical signals into a policy-aware supplier decision |
 
 ## Tests
