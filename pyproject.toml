@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supplier-scorecard"
+version = "1.0.0"
+description = "Explainable supplier decision engine combining quotation, payment, vendor-risk and technical-compliance signals."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Yiğitcan Öztürk" }]
+keywords = ["procurement", "supplier-management", "decision-support", "risk-scoring", "technical-compliance", "supply-chain"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business",
+]
+
+[project.urls]
+Homepage = "https://github.com/yigitcan-ozturk/supplier-scorecard"
+Repository = "https://github.com/yigitcan-ozturk/supplier-scorecard"
+Issues = "https://github.com/yigitcan-ozturk/supplier-scorecard/issues"
+
+[project.scripts]
+supplier-scorecard = "supplier_scorecard.cli:main"
+supplier-scorecard-pipeline = "supplier_scorecard.pipeline_cli:main"
+
+[tool.setuptools]
+packages = ["supplier_scorecard"]
+py-modules = ["main", "pipeline"]
