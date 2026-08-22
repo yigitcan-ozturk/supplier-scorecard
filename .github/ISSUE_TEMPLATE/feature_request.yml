@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a deliberately scoped extension to existing supplier-decision behavior.
+title: "feature: "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Procurement problem
+      description: What concrete procurement or decision-support problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior change or extension.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Scoring
+        - Policy gates
+        - Profiles
+        - Input validation
+        - JSON integration contract
+        - CLI / packaging
+        - Documentation / examples
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: auditability
+    attributes:
+      label: Auditability and compatibility
+      description: Explain how the proposal remains deterministic, reviewable, and compatible with existing public contracts.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Scope check
+      options:
+        - label: This proposal does not move technical bid-compliance inference into supplier-scorecard; that responsibility remains with bidlint.
+          required: true
+        - label: This proposal does not silently change existing weights, thresholds, or decision semantics.
+          required: true

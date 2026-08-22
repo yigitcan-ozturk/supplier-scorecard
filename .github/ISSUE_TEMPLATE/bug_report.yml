@@ -1,0 +1,54 @@
+name: Bug report
+description: Report reproducible incorrect or unexpected behavior.
+title: "bug: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting a problem. Please provide enough detail to reproduce it deterministically.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest input, command, or Python snippet that reproduces the behavior. Remove confidential supplier data.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Actual output
+      description: Paste the relevant output, error, or decision payload.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: python
+    attributes:
+      label: Python version
+      options:
+        - "3.11"
+        - "3.12"
+        - "3.13"
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanitization
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed confidential, proprietary, or personally identifying supplier/project data from this report.
+          required: true
