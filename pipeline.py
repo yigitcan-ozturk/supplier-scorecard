@@ -161,13 +161,44 @@ def _prepare_rfq(payload, tools, work_dir):
     return rfq
 
 
+def _commercial_risk_or_raise(payment_payload, supplier):
+    if payment_payload.get("review_required") is True:
+        reason = payment_payload.get("review_reason") or "unspecified payment-term review"
+        raise RuntimeError(
+            f"payment terms for '{supplier}' require human review: {reason}"
+        )
+
+    value = payment_payload.get(
+        "commercial_risk",
+        payment_payload.get("buyer_exposure"),
+    )
+    if value is None:
+        raise RuntimeError(
+            f"payment terms for '{supplier}' do not provide a numeric commercial risk."
+        )
+
+    try:
+        commercial = float(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"payment terms for '{supplier}' contain an invalid commercial risk."
+        ) from exc
+
+    if not 0 <= commercial <= 100:
+        raise RuntimeError(
+            f"payment terms for '{supplier}' contain commercial risk outside 0-100."
+        )
+
+    return commercial
+
+
 def _run_supplier(profile, tools, scorecard_main, rfq_path, supplier_dir, *, resolved_profile):
     supplier = str(profile["supplier"]).strip()
     supplier_dir.mkdir(parents=True, exist_ok=True)
     payment = supplier_dir / "payment.json"
     run_command([sys.executable, tools["payment-terms-parser"], str(profile["payment_terms"]), "--supplier", supplier, "--output", payment])
     payment_payload = json.loads(payment.read_text(encoding="utf-8"))
-    commercial = float(payment_payload.get("commercial_risk", payment_payload.get("buyer_exposure")))
+    commercial = _commercial_risk_or_raise(payment_payload, supplier)
     vendor = profile["vendor_risk"]
     vendor_payload = run_command([
         sys.executable, tools["vendor-risk-engine"], supplier,
