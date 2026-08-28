@@ -180,6 +180,35 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(by_name["Supplier B"]["scoring_mode"], "legacy-3-component")
         self.assertAlmostEqual(by_name["Supplier B"]["weights"]["vendor_risk"], .55)
 
+    def test_payment_review_state_stops_automatic_scoring(self):
+        payload = {
+            "commercial_risk": None,
+            "review_required": True,
+            "review_reason": "unsupported_or_ambiguous_terms",
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Supplier A.*require human review.*unsupported_or_ambiguous_terms",
+        ):
+            pipeline._commercial_risk_or_raise(payload, "Supplier A")
+
+    def test_missing_commercial_risk_stops_automatic_scoring(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Supplier A.*do not provide a numeric commercial risk",
+        ):
+            pipeline._commercial_risk_or_raise({}, "Supplier A")
+
+    def test_legacy_numeric_commercial_risk_remains_supported(self):
+        self.assertEqual(
+            pipeline._commercial_risk_or_raise(
+                {"commercial_risk": 35},
+                "Supplier A",
+            ),
+            35.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
