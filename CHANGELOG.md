@@ -4,7 +4,14 @@ All notable project milestones are summarized here.
 
 ## Unreleased
 
-- No unreleased changes.
+### Vendor-risk trend integration
+
+- Added an optional `vendor-risk-engine` historical-trend integration layer without changing the frozen v1.0 numeric scoring formula.
+- Added fail-closed supplier/current-score matching between current vendor-risk and historical-trend artifacts.
+- Added explicit trend decision signals: `ESCALATE`, `REVIEW`, `OBSERVE`, `IMPROVING`, `STABLE` and `INSUFFICIENT_HISTORY`.
+- Deteriorating HIGH/CRITICAL risk now requires human escalation; deteriorating MEDIUM risk requires review; deteriorating LOW risk is surfaced for monitoring only.
+- Improving trends never erase current high-risk or existing policy gates.
+- Added public Python API and connected-artifact helper with upstream trend provenance.
 
 ## [1.1.0] - 2026-08-29
 
