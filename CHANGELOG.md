@@ -4,14 +4,7 @@ All notable project milestones are summarized here.
 
 ## Unreleased
 
-### Vendor-risk trend integration
-
-- Added an optional `vendor-risk-engine` historical-trend integration layer without changing the frozen v1.0 numeric scoring formula.
-- Added fail-closed supplier/current-score matching between current vendor-risk and historical-trend artifacts.
-- Added explicit trend decision signals: `ESCALATE`, `REVIEW`, `OBSERVE`, `IMPROVING`, `STABLE` and `INSUFFICIENT_HISTORY`.
-- Deteriorating HIGH/CRITICAL risk now requires human escalation; deteriorating MEDIUM risk requires review; deteriorating LOW risk is surfaced for monitoring only.
-- Improving trends never erase current high-risk or existing policy gates.
-- Added public Python API and connected-artifact helper with upstream trend provenance.
+- No unreleased changes.
 
 ## [1.1.0] - 2026-08-29
 
@@ -27,11 +20,22 @@ All notable project milestones are summarized here.
 - Added a sanitized three-supplier engineering procurement pilot and multi-repository CI gate.
 - Documented persistence/API/application boundaries outside the deterministic scoring core.
 
+### Vendor-risk trend integration
+
+- Added an optional `vendor-risk-engine` historical-trend integration layer without changing the frozen v1.0 numeric scoring formula.
+- Added fail-closed supplier/current-score matching between current vendor-risk and historical-trend artifacts.
+- Added explicit trend decision signals: `ESCALATE`, `REVIEW`, `OBSERVE`, `IMPROVING`, `STABLE` and `INSUFFICIENT_HISTORY`.
+- Deteriorating HIGH/CRITICAL risk requires human escalation; deteriorating MEDIUM risk requires review; deteriorating LOW risk is surfaced for monitoring only.
+- Improving trends never erase current high-risk or existing policy gates.
+- Added public Python API and connected-artifact helper with upstream trend provenance.
+- Trend never modifies the numeric score; score adjustment remains explicitly `0.0`.
+
 ### Version contract
 
 - Advanced the package/release version to `1.1.0`.
 - Kept the deterministic scoring/result contract at version `1.0`.
 - Kept the decision-record schema at version `1.0`.
+- Added vendor-trend integration contract version `1.0`.
 
 ### Packaging and distribution
 
