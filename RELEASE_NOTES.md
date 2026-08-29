@@ -1,77 +1,72 @@
-# supplier-scorecard v1.0
-
-Released: 2026-08-19
+# supplier-scorecard v1.1.0
 
 ## Summary
 
-v1.0 marks the completed stable portfolio release of `supplier-scorecard`. It does not introduce a new scoring feature beyond v0.9; it freezes and documents the decision model as a coherent procurement decision engine.
+v1.1.0 adds an operational audit and provenance layer around the frozen v1.0 supplier decision model. The package can now produce a tamper-evident decision record that preserves the deterministic score/policy result while recording the exact profile, policy, upstream tool versions and retained artifacts that produced it.
 
-The project now has a clear endpoint: supplier quotation, payment exposure, vendor risk and optional technical compliance can be combined through category-aware weights, deterministic policy gates and explainable portfolio ranking.
+This is intentionally **not a scoring-model change**. The deterministic supplier-scorecard result contract remains version `1.0`; v1.1.0 is the package/release version for the new operational capabilities.
 
-## Stable capabilities
+## New in v1.1.0
 
-- Single-supplier and multi-supplier portfolio scoring.
-- Four-component scoring: quotation, commercial/payment, vendor risk and technical compliance.
-- Backward-compatible three-component scoring when technical data is absent.
-- Built-in category profiles and external JSON profile files.
-- Policy gates that can move suppliers to `REVIEW` or `BLOCKED` independently of score.
-- Automatic recommendation only from policy-eligible suppliers.
-- Deterministic explanation of score drivers, warnings and winner-vs-runner-up trade-offs.
-- One-command orchestration with `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine`.
-- Machine-readable JSON outputs and optional audit artifact retention.
-- Python standard-library-only runtime.
-
-## Version contract
-
-The v1.0 release aligns the main scorecard, portfolio result and orchestration layer on version `1.0`.
-
-Existing v0.9 input shapes remain valid. Existing three-component inputs continue to use normalized legacy weights when technical compliance is not supplied.
-
-## Verification
-
-Run locally with:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-GitHub Actions is configured for Python 3.11, 3.12 and 3.13.
-
-## Scope after v1.0
-
-The portfolio project is considered complete. Further work should be limited to maintenance, bug fixes or intentionally scoped follow-on work rather than continuing an indefinite feature sequence.
-
----
-
-# Phase 2 / v1.1 candidate notes
-
-Status: development candidate; **not yet a stable release**.
-
-Phase 2 is an intentionally scoped operational follow-on around the frozen v1.0 decision model. The scoring core remains authoritative: weights, score bands, category semantics, policy thresholds and supplier-ranking behavior are not changed by the provenance layer.
-
-## Candidate additions
-
-- Payment-term safety stops automatic supplier scoring when `payment-terms-parser` reports unknown, invalid or review-required commercial exposure.
-- A versioned decision-record envelope can wrap the unchanged v1.0 single-supplier or portfolio result.
-- Resolved profile and policy snapshots receive deterministic canonical SHA-256 hashes.
-- Retained pipeline input/output artifacts receive exact byte-level SHA-256 hashes.
-- Temporary/non-retained artifacts remain explicit rather than receiving fabricated provenance.
-- The complete operational record receives a deterministic integrity hash.
-- Human review state is recorded outside the scoring core as `NOT_REQUIRED`, `PENDING`, `APPROVED_EXCEPTION` or `REJECTED`.
-- The installed `supplier-scorecard-pipeline` CLI gains opt-in `--decision-record` output.
+- Versioned `supplier-scorecard.decision-record` envelope.
+- Canonical SHA-256 hashes for resolved profile and policy snapshots.
+- Exact byte-level SHA-256 provenance for retained pipeline artifacts.
+- Upstream version provenance for `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine` outputs.
+- Deterministic integrity hash over the complete operational decision payload.
+- Explicit operational review states: `NOT_REQUIRED`, `PENDING`, `APPROVED_EXCEPTION` and `REJECTED`.
+- Opt-in `--decision-record` output on the installed `supplier-scorecard-pipeline` CLI.
+- Payment-term safety that stops automatic supplier scoring when commercial exposure is unknown, invalid or explicitly review-required.
+- Sanitized three-supplier engineering procurement pilot with multi-repository GitHub Actions verification.
+- Documented persistence/API/application boundaries that keep database/framework concerns outside the deterministic scoring core.
 
 ## Pilot proof
 
-The sanitized fixture `samples/phase2/three-supplier-engineering-pilot.json` exercises the real multi-repository toolchain under the `critical-machining` profile. It intentionally creates a portfolio in which:
+The canonical `critical-machining` pilot intentionally separates numeric ranking from policy eligibility:
 
-- `Pilot Supplier A` is the numerical score leader but is held at `REVIEW` by the compliance-incident policy gate;
-- `Pilot Supplier B` is the highest-scoring policy-eligible supplier and is automatically recommended;
-- `Pilot Supplier C` remains below the profile's minimum automatic score and therefore requires review.
+- `Pilot Supplier A` ranks first numerically but is held at `REVIEW` by a compliance-incident policy gate.
+- `Pilot Supplier B` is the highest-scoring policy-eligible supplier and is automatically recommended.
+- `Pilot Supplier C` is held at `REVIEW` by the profile's minimum automatic-score gate.
 
-The `.github/workflows/phase2-pilot.yml` workflow checks out the real `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine` repositories, runs the installed pipeline, writes a retained decision record, verifies artifact hashes and asserts the expected policy-aware recommendation.
+The final decision record retains and hashes 11 artifacts, including three currency-normalizer outputs, the rfqdiff result, and each supplier's payment and vendor-risk outputs.
 
-The first integrated Phase 2 pilot and the normal Python 3.11/3.12/3.13 test matrix both passed on the integrated development branch before merge review.
+## Version contract
 
-## Release gate
+| Contract | v1.1.0 value |
+| --- | --- |
+| Package / GitHub release | `1.1.0` |
+| Deterministic scoring/result contract | `1.0` |
+| Pipeline/portfolio result semantics | `1.0` |
+| Decision-record schema | `1.0` |
+| Upstream tool versions | recorded per artifact |
 
-Phase 2 should become a stable v1.1 release only after the integrated pull request is merged, the final `main` CI remains green, documentation is reviewed and a deliberate v1.1 release/tag is created. Until then, the latest stable release remains **v1.0.0**.
+Existing v1.0 scoring inputs, weights, recommendation bands, category profiles and policy gates remain unchanged.
+
+## Compatibility
+
+- Existing manual, CSV, connected-JSON and portfolio scoring workflows remain valid.
+- Existing source-checkout workflows through `main.py` and `pipeline.py` remain supported.
+- Decision-record output is opt-in; existing callers do not need to consume the new envelope.
+- The runtime remains Python standard-library-only for `supplier-scorecard` itself.
+
+## Verification
+
+The Phase 2 implementation passed:
+
+- the Python 3.11 / 3.12 / 3.13 source and installed-wheel test matrix;
+- installed CLI smoke tests;
+- deterministic decision-record integrity tests;
+- retained-artifact mutation/provenance tests;
+- the multi-repository three-supplier end-to-end pilot;
+- post-merge `main` CI after both runtime and operational-boundary merges.
+
+Stable release creation remains guarded by the repository release workflow, which requires the release source to be `main` and derives the tag directly from the package version in `pyproject.toml`.
+
+## Scope
+
+`supplier-scorecard` remains decision-support infrastructure, not an automatic contractual acceptance system. Human exception approval is governance state outside the deterministic score, and authentication, authorization, digital signatures, persistence and application APIs remain hosting-layer responsibilities.
+
+---
+
+# v1.0 history
+
+v1.0 established the stable deterministic supplier decision engine: four-component scoring with backward-compatible three-component behavior, category profiles, explicit policy gates, explainability, portfolio ranking and orchestration across quotation, payment and vendor-risk inputs.
