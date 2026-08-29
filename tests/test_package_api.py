@@ -19,6 +19,13 @@ class PackageApiTests(unittest.TestCase):
         self.assertEqual(profile["name"], "critical-machining")
         self.assertIn("technical", profile["weights"])
 
+    def test_public_vendor_trend_api(self):
+        self.assertEqual(supplier_scorecard.TREND_INTEGRATION_VERSION, "1.0")
+        self.assertTrue(callable(supplier_scorecard.normalize_vendor_trend))
+        self.assertTrue(callable(supplier_scorecard.vendor_trend_decision))
+        self.assertTrue(callable(supplier_scorecard.apply_vendor_trend))
+        self.assertTrue(callable(supplier_scorecard.score_from_tools_with_trend))
+
 
 if __name__ == "__main__":
     unittest.main()
