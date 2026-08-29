@@ -1,0 +1,13 @@
+{
+  "pilot": "three-supplier-engineering-procurement",
+  "issue": 9,
+  "status": "fixture-design",
+  "supplier_count": 3,
+  "category_profile": "critical-machining",
+  "requirements": {
+    "synthetic_suppliers_only": true,
+    "include_policy_review_leader": true,
+    "retain_audit_artifacts": true,
+    "decision_record_required": true
+  }
+}
