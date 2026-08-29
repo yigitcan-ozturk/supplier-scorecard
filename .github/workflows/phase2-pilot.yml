@@ -1,0 +1,106 @@
+name: Phase 2 Pilot
+
+on:
+  pull_request:
+    paths:
+      - "supplier_scorecard/**"
+      - "pipeline.py"
+      - "samples/phase2/**"
+      - ".github/workflows/phase2-pilot.yml"
+  workflow_dispatch:
+
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout supplier-scorecard
+        uses: actions/checkout@v4
+
+      - name: Checkout currency-normalizer
+        uses: actions/checkout@v4
+        with:
+          repository: yigitcan-ozturk/currency-normalizer
+          path: tools/currency-normalizer
+
+      - name: Checkout rfqdiff
+        uses: actions/checkout@v4
+        with:
+          repository: yigitcan-ozturk/rfqdiff
+          path: tools/rfqdiff
+
+      - name: Checkout payment-terms-parser
+        uses: actions/checkout@v4
+        with:
+          repository: yigitcan-ozturk/payment-terms-parser
+          path: tools/payment-terms-parser
+
+      - name: Checkout vendor-risk-engine
+        uses: actions/checkout@v4
+        with:
+          repository: yigitcan-ozturk/vendor-risk-engine
+          path: tools/vendor-risk-engine
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install current scorecard
+        run: python -m pip install -e .
+
+      - name: Run sanitized three-supplier pilot
+        run: |
+          mkdir -p "$RUNNER_TEMP/phase2-pilot"
+          supplier-scorecard-pipeline \
+            samples/phase2/three-supplier-engineering-pilot.json \
+            --tools-root "$GITHUB_WORKSPACE/tools" \
+            --work-dir "$RUNNER_TEMP/phase2-pilot/work" \
+            --output "$RUNNER_TEMP/phase2-pilot/result.json" \
+            --decision-record "$RUNNER_TEMP/phase2-pilot/decision-record.json" \
+            --json > "$RUNNER_TEMP/phase2-pilot/stdout.json"
+
+      - name: Validate pilot decision and audit record
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from supplier_scorecard.decision_record import verify_decision_record
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "phase2-pilot"
+          result = json.loads((root / "result.json").read_text(encoding="utf-8"))
+          record = json.loads((root / "decision-record.json").read_text(encoding="utf-8"))
+
+          assert result["top_scoring_supplier"] == "Pilot Supplier A", result
+          assert result["recommended_supplier"] == "Pilot Supplier B", result
+          assert result["decision_status"] == "AUTO-RECOMMENDED", result
+
+          by_name = {item["supplier"]: item for item in result["suppliers"]}
+          assert by_name["Pilot Supplier A"]["rank"] == 1
+          assert by_name["Pilot Supplier A"]["final_decision"] == "REVIEW"
+          assert by_name["Pilot Supplier A"]["policy"]["status"] == "REVIEW"
+          assert by_name["Pilot Supplier B"]["rank"] == 2
+          assert by_name["Pilot Supplier B"]["policy"]["auto_eligible"] is True
+          assert by_name["Pilot Supplier C"]["final_decision"] == "REVIEW"
+
+          verification = verify_decision_record(record)
+          assert verification["valid"], verification
+          assert record["review"]["status"] == "NOT_REQUIRED"
+          assert record["result"] == result
+          assert all(
+              artifact["sha256"]
+              for artifact in record["provenance"]["artifacts"]
+              if artifact["retained"]
+          )
+          PY
+
+      - name: Upload pilot evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-pilot-evidence
+          path: |
+            ${{ runner.temp }}/phase2-pilot/result.json
+            ${{ runner.temp }}/phase2-pilot/decision-record.json
+            ${{ runner.temp }}/phase2-pilot/stdout.json
+            ${{ runner.temp }}/phase2-pilot/work
+          if-no-files-found: error

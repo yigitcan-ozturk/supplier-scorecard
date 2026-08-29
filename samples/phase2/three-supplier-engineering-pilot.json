@@ -1,0 +1,62 @@
+{
+  "category_profile": "critical-machining",
+  "target_currency": "EUR",
+  "quotes": [
+    {
+      "name": "Pilot Supplier A",
+      "currency": "EUR",
+      "price": 77000,
+      "lead_time_weeks": 8,
+      "payment_days": 30
+    },
+    {
+      "name": "Pilot Supplier B",
+      "currency": "EUR",
+      "price": 80500,
+      "lead_time_weeks": 9,
+      "payment_days": 45
+    },
+    {
+      "name": "Pilot Supplier C",
+      "currency": "EUR",
+      "price": 76000,
+      "lead_time_weeks": 12,
+      "payment_days": 0
+    }
+  ],
+  "supplier_profiles": [
+    {
+      "supplier": "Pilot Supplier A",
+      "payment_terms": "Net 30 days",
+      "technical_compliance": 99,
+      "vendor_risk": {
+        "on_time_delivery": 96,
+        "defect_rate": 0.5,
+        "compliance_incidents": 1,
+        "dependency_share": 20
+      }
+    },
+    {
+      "supplier": "Pilot Supplier B",
+      "payment_terms": "Net 45 days",
+      "technical_compliance": 92,
+      "vendor_risk": {
+        "on_time_delivery": 95,
+        "defect_rate": 1.0,
+        "compliance_incidents": 0,
+        "dependency_share": 25
+      }
+    },
+    {
+      "supplier": "Pilot Supplier C",
+      "payment_terms": "20% advance, 80% after delivery",
+      "technical_compliance": 72,
+      "vendor_risk": {
+        "on_time_delivery": 86,
+        "defect_rate": 3.0,
+        "compliance_incidents": 0,
+        "dependency_share": 50
+      }
+    }
+  ]
+}
