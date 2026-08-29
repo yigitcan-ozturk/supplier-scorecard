@@ -56,6 +56,60 @@ class PipelineCliDecisionRecordTests(unittest.TestCase):
             record = create_decision_record(result, artifacts=artifacts)
             self.assertTrue(verify_decision_record(record)["valid"])
 
+    def test_vendor_version_falls_back_to_engine_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vendor = root / "vendor.json"
+            vendor.write_text(
+                json.dumps({"meta": {"engine_version": "0.5.0"}}),
+                encoding="utf-8",
+            )
+            version = pipeline_cli._source_version(
+                {"sources": {"vendor_risk_engine": {"version": None}}},
+                "vendor_risk_engine",
+                path=vendor,
+            )
+            self.assertEqual(version, "0.5.0")
+
+    def test_currency_normalizer_outputs_are_included(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_path = root / "input.json"
+            rfq = root / "rfq.json"
+            normalized = root / "quote-1-normalized.json"
+            payment = root / "payment.json"
+            vendor = root / "vendor.json"
+            input_path.write_text("{}", encoding="utf-8")
+            rfq.write_text("{}", encoding="utf-8")
+            normalized.write_text(
+                json.dumps({"normalization": {"version": "0.3.0"}}),
+                encoding="utf-8",
+            )
+            payment.write_text("{}", encoding="utf-8")
+            vendor.write_text("{}", encoding="utf-8")
+
+            result = {
+                "tool": "supplier-scorecard",
+                "version": "1.0",
+                "supplier": "Supplier A",
+                "profile": {"name": "critical-machining", "policy": {}},
+                "policy": {"status": "PASS", "rules": {}},
+                "sources": {},
+                "orchestration": {
+                    "mode": "single",
+                    "artifacts": {
+                        "rfq": str(rfq),
+                        "payment": str(payment),
+                        "vendor_risk": str(vendor),
+                    },
+                },
+            }
+            artifacts = pipeline_cli._artifact_records(result, input_path=input_path)
+            currency = [item for item in artifacts if item["tool"] == "currency-normalizer"]
+            self.assertEqual(len(currency), 1)
+            self.assertEqual(currency[0]["version"], "0.3.0")
+            self.assertTrue(currency[0]["sha256"])
+
     def test_temporary_outputs_are_explicitly_non_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             input_path = Path(tmp) / "input.json"
