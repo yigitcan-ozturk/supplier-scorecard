@@ -4,13 +4,35 @@ All notable project milestones are summarized here.
 
 ## Unreleased
 
+- No unreleased changes.
+
+## [1.1.0] - 2026-08-29
+
+### Operational provenance and safety
+
+- Added opt-in tamper-evident decision records around the unchanged v1.0 scoring result.
+- Added canonical SHA-256 profile/policy snapshots and retained artifact hashes.
+- Added upstream version provenance for currency normalization, quotation comparison, payment parsing and vendor-risk outputs.
+- Added deterministic decision-payload integrity verification.
+- Added explicit operational human-review states without modifying deterministic score/policy outputs.
+- Added `--decision-record` to the installed pipeline CLI.
+- Stopped automatic scoring when payment terms require human review or commercial exposure is not safely numeric.
+- Added a sanitized three-supplier engineering procurement pilot and multi-repository CI gate.
+- Documented persistence/API/application boundaries outside the deterministic scoring core.
+
+### Version contract
+
+- Advanced the package/release version to `1.1.0`.
+- Kept the deterministic scoring/result contract at version `1.0`.
+- Kept the decision-record schema at version `1.0`.
+
 ### Packaging and distribution
 
-- Added `pyproject.toml` metadata for an installable Python distribution.
-- Added the stable `supplier_scorecard` Python import namespace.
-- Added `supplier-scorecard` and `supplier-scorecard-pipeline` console entry points.
-- Expanded CI to build and install wheels across Python 3.11, 3.12 and 3.13 and smoke-test the installed commands.
-- Kept `main.py` and `pipeline.py` source-checkout workflows backward compatible.
+- Retained `pyproject.toml` metadata for the installable Python distribution.
+- Retained the stable `supplier_scorecard` Python import namespace.
+- Retained `supplier-scorecard` and `supplier-scorecard-pipeline` console entry points.
+- CI continues to build and install wheels across Python 3.11, 3.12 and 3.13 and smoke-test installed commands.
+- `main.py` and `pipeline.py` source-checkout workflows remain backward compatible.
 
 ## [1.0] - 2026-08-19
 
