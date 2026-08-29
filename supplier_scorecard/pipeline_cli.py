@@ -24,10 +24,41 @@ def build_parser():
     return parser
 
 
-def _source_version(result, source_name):
+def _read_json(path):
+    if path in (None, "temporary"):
+        return {}
+    candidate = Path(path)
+    if not candidate.is_file():
+        return {}
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _source_version(result, source_name, *, path=None):
     sources = result.get("sources") if isinstance(result, dict) else None
     source = sources.get(source_name) if isinstance(sources, dict) else None
-    return source.get("version") if isinstance(source, dict) else None
+    if isinstance(source, dict) and source.get("version"):
+        return source["version"]
+
+    payload = _read_json(path)
+    if payload.get("version"):
+        return payload["version"]
+
+    meta = payload.get("meta")
+    if isinstance(meta, dict):
+        if meta.get("engine_version"):
+            return meta["engine_version"]
+        if meta.get("model_version"):
+            return meta["model_version"]
+
+    normalization = payload.get("normalization")
+    if isinstance(normalization, dict) and normalization.get("version"):
+        return normalization["version"]
+
+    return None
 
 
 def _representative_supplier_result(result):
@@ -36,6 +67,26 @@ def _representative_supplier_result(result):
     if isinstance(result.get("suppliers"), list) and result["suppliers"]:
         return result["suppliers"][0]
     return result
+
+
+def _currency_normalizer_records(rfq):
+    if rfq in (None, "temporary"):
+        return []
+    rfq_path = Path(rfq)
+    if not rfq_path.is_file():
+        return []
+
+    records = []
+    for index, path in enumerate(sorted(rfq_path.parent.glob("quote-*-normalized.json")), 1):
+        records.append(
+            artifact_record(
+                f"currency-normalizer-output:{index}",
+                path,
+                tool="currency-normalizer",
+                version=_source_version({}, "currency_normalizer", path=path),
+            )
+        )
+    return records
 
 
 def _artifact_records(result, *, input_path, profile_file=None):
@@ -55,12 +106,13 @@ def _artifact_records(result, *, input_path, profile_file=None):
     representative = _representative_supplier_result(result)
 
     rfq = artifacts.get("rfq") if isinstance(artifacts, dict) else None
+    records.extend(_currency_normalizer_records(rfq))
     records.append(
         artifact_record(
             "rfqdiff-output",
             rfq,
             tool="rfqdiff",
-            version=_source_version(representative, "rfqdiff"),
+            version=_source_version(representative, "rfqdiff", path=rfq),
             retained=rfq not in (None, "temporary"),
         )
     )
@@ -74,14 +126,14 @@ def _artifact_records(result, *, input_path, profile_file=None):
                     "payment-terms-output",
                     payment,
                     tool="payment-terms-parser",
-                    version=_source_version(result, "payment_terms_parser"),
+                    version=_source_version(result, "payment_terms_parser", path=payment),
                     retained=payment not in (None, "temporary"),
                 ),
                 artifact_record(
                     "vendor-risk-output",
                     vendor,
                     tool="vendor-risk-engine",
-                    version=_source_version(result, "vendor_risk_engine"),
+                    version=_source_version(result, "vendor_risk_engine", path=vendor),
                     retained=vendor not in (None, "temporary"),
                 ),
             ]
@@ -116,14 +168,14 @@ def _artifact_records(result, *, input_path, profile_file=None):
                     f"payment-terms-output:{supplier}",
                     payment,
                     tool="payment-terms-parser",
-                    version=_source_version(supplier_result, "payment_terms_parser"),
+                    version=_source_version(supplier_result, "payment_terms_parser", path=payment),
                     retained=payment not in (None, "temporary"),
                 ),
                 artifact_record(
                     f"vendor-risk-output:{supplier}",
                     vendor,
                     tool="vendor-risk-engine",
-                    version=_source_version(supplier_result, "vendor_risk_engine"),
+                    version=_source_version(supplier_result, "vendor_risk_engine", path=vendor),
                     retained=vendor not in (None, "temporary"),
                 ),
             ]
