@@ -1,8 +1,8 @@
 """Public Python API for supplier-scorecard.
 
-The v1.0 implementation remains in the repository's compatibility modules
-(`main.py` and `pipeline.py`). This package provides a stable import namespace
-without breaking existing source-checkout workflows.
+Package release v1.1 adds operational decision-record capabilities while the
+frozen deterministic scoring/result contract remains version 1.0 in the
+repository's compatibility modules (`main.py` and `pipeline.py`).
 """
 
 from main import (
@@ -22,7 +22,7 @@ from main import (
     score_supplier,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "CATEGORY_PROFILES",
