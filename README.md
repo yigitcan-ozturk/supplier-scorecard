@@ -9,18 +9,18 @@
 
 `supplier-scorecard` combines quotation competitiveness, payment exposure, supplier risk and optional technical-compliance evidence into transparent, policy-aware supplier decisions.
 
-> **Latest stable release: v1.0.0.** The public scoring model and orchestration contract are intentionally explicit and reviewable. The tool supports both installed CLI usage and a stable Python import namespace.
+> **Latest stable release: v1.1.0.** The package adds tamper-evident decision records, fail-closed commercial review safety and optional vendor-risk trend decision signals around the frozen deterministic v1.0 scoring contract.
 
-`bidlint` is the technical-compliance source in the wider toolchain; commercial scoring, payment exposure and supplier risk remain independently inspectable rather than being hidden inside one opaque model.
+`bidlint` remains the technical-compliance source in the wider toolchain. Currency normalization, quotation comparison, payment exposure and supplier risk remain independently inspectable rather than being hidden inside one opaque model.
 
 ## Install
 
 Requirements: Python 3.11+.
 
-Install the exact stable **v1.0.0** release directly from GitHub — no repository clone required:
+Install the exact stable **v1.1.0** release directly from GitHub:
 
 ```bash
-python -m pip install "supplier-scorecard @ git+https://github.com/yigitcan-ozturk/supplier-scorecard.git@v1.0.0"
+python -m pip install "supplier-scorecard @ git+https://github.com/yigitcan-ozturk/supplier-scorecard.git@v1.1.0"
 ```
 
 Verify the installed commands:
@@ -95,7 +95,7 @@ Existing source-checkout workflows using `python main.py ...` remain supported f
 
 ## Decision model
 
-The score uses four normalized components:
+The deterministic score uses four normalized components:
 
 | Component | Direction |
 | --- | --- |
@@ -104,7 +104,7 @@ The score uses four normalized components:
 | Vendor risk | `100 - vendor risk` |
 | Technical compliance | higher is better |
 
-Technical compliance is optional. When it is omitted, non-technical profile weights are re-normalized so established three-component inputs retain their previous scoring ratio. Results expose either `legacy-3-component` or `4-component` in `scoring_mode`.
+Technical compliance is optional. When omitted, non-technical profile weights are re-normalized so established three-component inputs retain their previous scoring ratio. Results expose either `legacy-3-component` or `4-component` in `scoring_mode`.
 
 Base score recommendations are:
 
@@ -129,15 +129,6 @@ Policy gates are evaluated after the numeric score. A supplier can therefore ran
 
 External JSON profiles can change weights and policy without editing Python code. Bundled examples cover marble sourcing, technical ceramics, gears and machinery CAPEX.
 
-```bash
-supplier-scorecard "Supplier A" \
-  --quotation-score 86 \
-  --commercial-risk 20 \
-  --vendor-risk 30 \
-  --technical-compliance 93 \
-  --profile-file samples/profiles/technical-ceramics.json
-```
-
 Custom profiles are validated: unknown fields are rejected, weights must be valid and policy values remain explicit for auditability.
 
 ## Engineering procurement toolchain
@@ -157,7 +148,7 @@ bidlint ──> technical compliance ──────────────�
 | [`currency-normalizer`](https://github.com/yigitcan-ozturk/currency-normalizer) | Normalize quotation currencies with FX provenance |
 | [`rfqdiff`](https://github.com/yigitcan-ozturk/rfqdiff) | Compare and score commercial quotation signals |
 | [`payment-terms-parser`](https://github.com/yigitcan-ozturk/payment-terms-parser) | Convert payment terms into buyer-exposure signals |
-| [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score delivery, quality, commercial, compliance-event and dependency risk |
+| [`vendor-risk-engine`](https://github.com/yigitcan-ozturk/vendor-risk-engine) | Score current supplier risk and optionally produce historical trend artifacts |
 | [`bidlint`](https://github.com/yigitcan-ozturk/bidlint) | Produce evidence-backed technical-compliance findings and hand-off data |
 | **`supplier-scorecard`** | Combine independently inspectable signals into a policy-aware supplier decision |
 
@@ -178,11 +169,11 @@ supplier-scorecard-pipeline \
 
 For technical bid evaluation, `bidlint` can emit a versioned supplier-scorecard hand-off. A numeric technical-compliance value is supplied only when technical findings are safe to reduce to that signal; unresolved engineering review remains explicit rather than silently affecting ranking.
 
-## Operational decision records — Phase 2 candidate
+## v1.1 operational decision records
 
-The Phase 2 development line adds an **opt-in operational provenance wrapper** around the existing v1.0 result. It does **not** change scoring weights, recommendation bands, category semantics, policy thresholds, ranking or the final v1.0 policy decision.
+v1.1.0 adds an **opt-in operational provenance wrapper** around the unchanged v1.0 deterministic score/policy result.
 
-When using the installed pipeline CLI on the Phase 2 line, retain pipeline artifacts and write a decision record with:
+Retain pipeline artifacts and write a decision record with:
 
 ```bash
 supplier-scorecard-pipeline \
@@ -207,7 +198,40 @@ Human review metadata is governance state outside the scoring core. An approved 
 
 The sanitized canonical pilot in `samples/phase2/three-supplier-engineering-pilot.json` proves a deliberate score-vs-policy case: the numerical leader is held for review because of a compliance incident, while the highest-scoring policy-eligible supplier is automatically recommended. `.github/workflows/phase2-pilot.yml` executes this case across the real local toolchain and verifies the resulting audit record.
 
-This Phase 2 functionality is a development candidate until it is merged and released; the latest stable public release remains **v1.0.0**.
+## v1.1 vendor-risk trend decision layer
+
+Historical trend is an optional review signal from `vendor-risk-engine`; it does **not** alter the numeric supplier score.
+
+The integration validates supplier identity and current-score consistency across current-risk and trend artifacts, then exposes explicit decision signals:
+
+| Current risk + trend | Decision signal |
+| --- | --- |
+| `HIGH` / `CRITICAL` + deteriorating | `ESCALATE` |
+| `MEDIUM` + deteriorating | `REVIEW` |
+| `LOW` + deteriorating | `OBSERVE` |
+| improving | `IMPROVING` |
+| stable | `STABLE` |
+| one observation / insufficient history | `INSUFFICIENT_HISTORY` |
+
+Improvement never erases current vendor risk, compliance findings or existing policy gates. Numeric trend score adjustment is explicitly `0.0`.
+
+## Fail-closed commercial safety
+
+Automatic scoring stops when payment terms are ambiguous, unsupported or explicitly require review and a reliable numeric commercial-risk signal is unavailable.
+
+This prevents unknown commercial exposure from being silently treated as low risk.
+
+## Version contract
+
+| Contract | Stable value |
+| --- | --- |
+| Package / GitHub release | `1.1.0` |
+| Deterministic scoring/result contract | `1.0` |
+| Pipeline/portfolio result semantics | `1.0` |
+| Decision-record schema | `1.0` |
+| Vendor trend integration contract | `1.0` |
+
+Existing v1.0 scoring inputs, weights, recommendation bands, category profiles and policy gates remain unchanged.
 
 ## Explainability
 
@@ -225,17 +249,18 @@ The goal is not to automate procurement judgment away. It is to make the decisio
 
 CI runs on Python 3.11, 3.12 and 3.13 and validates:
 
-- the existing source-level unit test suite;
+- source-level unit tests;
 - the public `supplier_scorecard` Python namespace;
 - wheel and source-distribution construction;
 - package metadata with `twine check`;
 - installation of the built wheel;
 - installed `supplier-scorecard` CLI execution;
-- installed `supplier-scorecard-pipeline` CLI execution.
+- installed `supplier-scorecard-pipeline` CLI execution;
+- multi-repository three-supplier pilot verification;
+- decision-record integrity and retained-artifact provenance;
+- vendor-risk trend contract, mismatch and decision-gate behavior.
 
-The Phase 2 development line additionally runs a multi-repository pilot workflow that checks out the real `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine` tools, produces a three-supplier portfolio decision, validates the policy-aware recommendation and verifies the retained decision-record hashes.
-
-No third-party runtime dependencies are required.
+No third-party runtime dependencies are required by `supplier-scorecard` itself.
 
 ## Development
 
@@ -256,7 +281,9 @@ External contributions are welcome when they preserve deterministic scoring, exp
 
 ## Scope
 
-`supplier-scorecard` is a decision-support engine, not an automatic contractual acceptance system. Technical compliance remains owned by `bidlint`; currency normalization, quotation comparison, payment exposure and supplier risk remain separate responsibilities with explicit hand-off contracts.
+`supplier-scorecard` is decision-support infrastructure, not an automatic contractual acceptance system. Authentication, authorization, digital signatures, persistence and application APIs remain hosting-layer responsibilities.
+
+Historical trend is a review signal, not a forecasting claim. Current supplier-risk evidence remains authoritative for the numeric score.
 
 ## License
 
