@@ -1,15 +1,15 @@
 # Decision Record Contract
 
-Status: **Phase 2 proposal**  
-Target: **scoped v1.1 follow-on**  
+Status: **implemented Phase 2 contract**  
+Target package release: **scoped v1.1 follow-on**  
 Parent issue: #6  
-Implementation issue: #7
+Implementation issue: #7 (completed)
 
 ## Purpose
 
 `supplier-scorecard` v1.0 remains the authoritative deterministic scoring core. The decision-record layer adds operational provenance, integrity and human-review metadata around the existing result without changing score calculation, recommendation bands, category weights or policy-gate semantics.
 
-The record is intended to answer four audit questions:
+The record answers four audit questions:
 
 1. What decision did the scorecard produce?
 2. Which normalized inputs, profile and policy produced it?
@@ -63,14 +63,14 @@ The record is intended to answer four audit questions:
 
 ## Artifact provenance
 
-Each retained artifact entry should use the following shape:
+Each retained artifact entry uses the following shape:
 
 ```json
 {
   "role": "rfqdiff-output",
   "path": "pipeline-output/rfq.json",
   "tool": "rfqdiff",
-  "version": "1.0",
+  "version": "0.2",
   "sha256": "...",
   "retained": true
 }
@@ -82,6 +82,7 @@ Rules:
 - A temporary/non-retained artifact is represented explicitly with `retained: false` and `sha256: null` rather than pretending provenance exists.
 - Paths are operational references only; the hash is the integrity identity.
 - Upstream tool/version metadata is recorded when present but must not be fabricated when absent.
+- The integrated pipeline records normalized currency artifacts as well as rfqdiff, payment-terms-parser and vendor-risk-engine outputs when they are retained.
 
 ## Profile and policy provenance
 
@@ -110,20 +111,25 @@ An `APPROVED_EXCEPTION` does not alter the embedded score or policy result. It r
 
 `integrity.payload_sha256` is calculated over the complete record **excluding the `integrity` object itself**. This avoids recursive hashing while making changes to the result, provenance or review state detectable.
 
-The wrapper hash is not a digital signature and does not prove who approved a decision. Signature/identity infrastructure is explicitly outside this first contract and may be added later as a separate scope.
+The wrapper hash is not a digital signature and does not prove who approved a decision. Signature/identity infrastructure remains an application/infrastructure responsibility as defined in `docs/operational-boundaries.md`.
 
 ## Compatibility
 
 - v1.0 CLI/Python callers remain valid.
 - Existing v1.0 result JSON remains valid and unchanged.
-- Decision-record output should be opt-in in the first implementation.
+- Decision-record output is opt-in through the installed pipeline CLI.
 - Single-supplier and portfolio modes use the same envelope, differing only in the embedded `result` shape.
 
-## Acceptance gate for implementation
+## Implemented acceptance evidence
 
-- Existing v1.0 tests continue to pass unchanged.
-- New tests prove deterministic canonical hashing.
-- New tests prove an artifact-byte change changes the artifact hash.
-- New tests prove wrapper creation does not mutate the embedded result.
-- New tests cover `NOT_REQUIRED` and `PENDING` review initialization.
-- Documentation clearly states that provenance and review state do not modify scoring semantics.
+- Existing v1.0 tests continue to pass.
+- Deterministic canonical hashing is covered by tests.
+- Artifact-byte mutation is detected by tests.
+- Wrapper creation does not mutate the embedded source result.
+- `NOT_REQUIRED` and `PENDING` review initialization are covered.
+- Temporary/non-retained artifacts are explicit.
+- The sanitized three-supplier engineering pilot passes across the real local procurement toolchain.
+- The final pilot record contains complete retained artifact hashes and upstream version metadata.
+- README/release notes explicitly distinguish scoring semantics from operational provenance.
+
+The package release version may advance independently from this schema and from the frozen v1.0 scoring-result contract.
