@@ -70,7 +70,29 @@ jobs:
           root = Path(os.environ["RUNNER_TEMP"]) / "phase2-pilot"
           result = json.loads((root / "result.json").read_text(encoding="utf-8"))
           record = json.loads((root / "decision-record.json").read_text(encoding="utf-8"))
+          rfq = json.loads((root / "work" / "rfq.json").read_text(encoding="utf-8"))
 
+          # Producer contract: the live rfqdiff checkout must emit the v0.2
+          # auditable payload that supplier-scorecard is designed to consume.
+          assert rfq["tool"] == "rfqdiff", rfq
+          assert rfq["version"] == "0.2", rfq
+          assert len(rfq["suppliers"]) == 3, rfq
+          assert rfq["recommended_supplier"], rfq
+          assert rfq["decision_explanation"]["winner"] == rfq["recommended_supplier"], rfq
+          assert rfq["decision_explanation"]["runner_up"], rfq
+          assert set(rfq["decision_explanation"]["criterion_leaders"]) == {
+              "price", "lead_time", "payment_terms"
+          }, rfq
+          for supplier in rfq["suppliers"]:
+              assert set(supplier["score_breakdown"]) == {
+                  "price", "lead_time", "payment_terms"
+              }, supplier
+              source = supplier["rfqdiff_source"]
+              assert source["format"] == "json", source
+              assert len(source["sha256"]) == 64, source
+
+          # Consumer/business contract: the aggregate decision and retained
+          # decision record must remain stable after consuming that payload.
           assert result["top_scoring_supplier"] == "Pilot Supplier A", result
           assert result["recommended_supplier"] == "Pilot Supplier B", result
           assert result["decision_status"] == "AUTO-RECOMMENDED", result
