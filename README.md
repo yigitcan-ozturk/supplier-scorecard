@@ -178,6 +178,37 @@ supplier-scorecard-pipeline \
 
 For technical bid evaluation, `bidlint` can emit a versioned supplier-scorecard hand-off. A numeric technical-compliance value is supplied only when technical findings are safe to reduce to that signal; unresolved engineering review remains explicit rather than silently affecting ranking.
 
+## Operational decision records — Phase 2 candidate
+
+The Phase 2 development line adds an **opt-in operational provenance wrapper** around the existing v1.0 result. It does **not** change scoring weights, recommendation bands, category semantics, policy thresholds, ranking or the final v1.0 policy decision.
+
+When using the installed pipeline CLI on the Phase 2 line, retain pipeline artifacts and write a decision record with:
+
+```bash
+supplier-scorecard-pipeline \
+  samples/phase2/three-supplier-engineering-pilot.json \
+  --tools-root /path/to/procurement-tools \
+  --work-dir pipeline-output \
+  --output decision.json \
+  --decision-record decision-record.json \
+  --json
+```
+
+The decision record contains:
+
+- an unchanged snapshot of the deterministic supplier or portfolio result;
+- exact resolved profile and policy snapshots with canonical SHA-256 hashes;
+- SHA-256 hashes for retained input and upstream output artifacts;
+- explicit non-retained markers when temporary artifacts were used;
+- an integrity hash over the decision payload;
+- an operational review state (`NOT_REQUIRED`, `PENDING`, `APPROVED_EXCEPTION` or `REJECTED`).
+
+Human review metadata is governance state outside the scoring core. An approved exception never rewrites the embedded score or policy result.
+
+The sanitized canonical pilot in `samples/phase2/three-supplier-engineering-pilot.json` proves a deliberate score-vs-policy case: the numerical leader is held for review because of a compliance incident, while the highest-scoring policy-eligible supplier is automatically recommended. `.github/workflows/phase2-pilot.yml` executes this case across the real local toolchain and verifies the resulting audit record.
+
+This Phase 2 functionality is a development candidate until it is merged and released; the latest stable public release remains **v1.0.0**.
+
 ## Explainability
 
 Every supplier result can expose deterministic:
@@ -201,6 +232,8 @@ CI runs on Python 3.11, 3.12 and 3.13 and validates:
 - installation of the built wheel;
 - installed `supplier-scorecard` CLI execution;
 - installed `supplier-scorecard-pipeline` CLI execution.
+
+The Phase 2 development line additionally runs a multi-repository pilot workflow that checks out the real `currency-normalizer`, `rfqdiff`, `payment-terms-parser` and `vendor-risk-engine` tools, produces a three-supplier portfolio decision, validates the policy-aware recommendation and verifies the retained decision-record hashes.
 
 No third-party runtime dependencies are required.
 
