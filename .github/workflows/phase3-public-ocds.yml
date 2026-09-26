@@ -47,6 +47,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase3-public-ocds-review
-          path: ${{ runner.temp }}/phase3-ocds/
+          path: |
+            ${{ runner.temp }}/phase3-ocds/source_manifest.jsonl
+            ${{ runner.temp }}/phase3-ocds/coverage_report.json
           retention-days: 7
           if-no-files-found: error
