@@ -33,8 +33,15 @@ def acquire(start, end, destination):
             if response.status != 200 or "json" not in response.headers.get("Content-Type", "").lower():
                 raise ValueError("Expected HTTP 200 JSON from official publisher")
             raw = response.read(MAX_BYTES + 1)
-    except (HTTPError, URLError) as exc:
-        raise RuntimeError(f"Publisher download unavailable: {exc}") from exc
+    except HTTPError as exc:
+        if exc.code in (429, 503):
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            raise RuntimeError(
+                f"Publisher returned HTTP {exc.code}; stop requests and respect Retry-After={retry_after or 'not supplied'}"
+            ) from exc
+        raise RuntimeError(f"Publisher returned HTTP {exc.code}; do not bypass access restrictions") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Publisher connection unavailable: {exc}") from exc
     if len(raw) > MAX_BYTES:
         raise ValueError("Download exceeds bounded sample size")
     payload = json.loads(raw)
