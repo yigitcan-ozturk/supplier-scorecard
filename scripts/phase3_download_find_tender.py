@@ -52,6 +52,9 @@ def acquire(start, end, destination):
         raise ValueError("Missing source publisher URI or license; no provenance substitution")
     if not payload["releases"]:
         raise ValueError("No releases in requested period; try another bounded date range")
+    for release in payload["releases"]:
+        if not isinstance(release, dict) or not all(release.get(k) for k in ("ocid", "id", "date")):
+            raise ValueError("Publisher release missing OCID, release ID or date; reject entire batch")
     Path(destination).write_bytes(raw)
     print(f"saved={destination} releases={len(payload['releases'])} source={url}")
 
