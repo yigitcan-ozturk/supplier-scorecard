@@ -6,6 +6,7 @@ https://www.find-tender.service.gov.uk/apidocumentation/1.0/GET-ocdsReleasePacka
 """
 import argparse
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -16,6 +17,14 @@ MAX_BYTES = 8 * 1024 * 1024
 
 
 def acquire(start, end, destination):
+    # Reject malformed or unbounded collection windows before contacting the publisher.
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%dT%H:%M:%S")
+        end_dt = datetime.strptime(end, "%Y-%m-%dT%H:%M:%S")
+    except ValueError as exc:
+        raise ValueError("Date filters must use YYYY-MM-DDTHH:MM:SS") from exc
+    if not start_dt < end_dt <= start_dt + timedelta(days=7):
+        raise ValueError("Collection window must be positive and at most seven days")
     params = {"limit": 10, "updatedFrom": start, "updatedTo": end}
     url = ENDPOINT + "?" + urlencode(params)
     request = Request(url, headers={"Accept": "application/json", "User-Agent": "supplier-scorecard-research/1.0"})
