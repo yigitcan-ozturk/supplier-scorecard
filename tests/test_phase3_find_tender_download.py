@@ -79,6 +79,19 @@ class FindTenderDownloadTests(unittest.TestCase):
         self.assertFalse(self.target.exists())
 
     @patch("scripts.phase3_download_find_tender.urlopen")
+    def test_partial_release_batch_is_rejected_atomically(self, mock_urlopen):
+        payload = {"publisher": {"uri": "https://example.org"},
+                   "license": "https://example.org/license",
+                   "releases": [
+                       {"ocid": "ocds-synthetic-1", "id": "r1", "date": "2026-01-01"},
+                       {"ocid": "ocds-synthetic-2", "id": "r2"}
+                   ]}
+        mock_urlopen.return_value = FakeResponse(json.dumps(payload).encode())
+        with self.assertRaisesRegex(ValueError, "release missing"):
+            self._acquire()
+        self.assertFalse(self.target.exists())
+
+    @patch("scripts.phase3_download_find_tender.urlopen")
     def test_missing_provenance_is_rejected(self, mock_urlopen):
         mock_urlopen.return_value = FakeResponse(b'{"releases":[{"id":"test"}]}')
         with self.assertRaises(ValueError):
