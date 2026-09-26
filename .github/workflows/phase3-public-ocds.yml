@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       updated_from:
-        description: 'UTC start (YYYY-MM-DDTHH:MM:SS)'
+        description: 'Publisher update-window start (YYYY-MM-DDTHH:MM:SS)'
         required: true
         default: '2026-09-01T00:00:00'
       updated_to:
-        description: 'UTC end (YYYY-MM-DDTHH:MM:SS)'
+        description: 'Publisher update-window end (YYYY-MM-DDTHH:MM:SS)'
         required: true
         default: '2026-09-02T00:00:00'
 
@@ -43,7 +43,7 @@ jobs:
           python scripts/phase3_coverage_report.py \
             "$RUNNER_TEMP/phase3-ocds/public_records.jsonl" \
             "$RUNNER_TEMP/phase3-ocds/coverage_report.json"
-      - name: Upload evidence for private review
+      - name: Upload public-source evidence for review
         uses: actions/upload-artifact@v4
         with:
           name: phase3-public-ocds-review
