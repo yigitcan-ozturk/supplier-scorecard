@@ -4,6 +4,7 @@ No live publisher download is claimed. The transport is mocked so CI remains det
 """
 import io
 import json
+from urllib.error import HTTPError
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,16 @@ class FindTenderDownloadTests(unittest.TestCase):
         self.assertEqual(json.loads(self.target.read_text()), payload)
         request = mock_urlopen.call_args.args[0]
         self.assertIn("limit=10", request.full_url)
+
+    @patch("scripts.phase3_download_find_tender.urlopen")
+    def test_rate_limit_stops_and_exposes_retry_after(self, mock_urlopen):
+        mock_urlopen.side_effect = HTTPError(
+            "https://example.org", 429, "Too Many Requests", {"Retry-After": "11"}, None
+        )
+        with self.assertRaisesRegex(RuntimeError, "Retry-After=11"):
+            self._acquire()
+        self.assertEqual(mock_urlopen.call_count, 1)
+        self.assertFalse(self.target.exists())
 
     @patch("scripts.phase3_download_find_tender.urlopen")
     def test_html_response_is_rejected(self, mock_urlopen):
