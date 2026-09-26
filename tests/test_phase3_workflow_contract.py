@@ -19,6 +19,13 @@ class Phase3WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("schedule:", self.source)
         self.assertIn("contents: read", self.source)
 
+    def test_artifacts_exclude_raw_publication_payload(self):
+        upload = self.source.split('name: Upload public-source evidence for review', 1)[1]
+        self.assertIn('source_manifest.jsonl', upload)
+        self.assertIn('coverage_report.json', upload)
+        self.assertNotIn('raw.json', upload)
+        self.assertNotIn('public_records.jsonl', upload)
+
     def test_evidence_chain_is_present_and_short_lived(self):
         for required in (
             "phase3_download_find_tender.py",
