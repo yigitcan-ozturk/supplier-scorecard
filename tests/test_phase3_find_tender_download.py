@@ -37,6 +37,19 @@ class FindTenderDownloadTests(unittest.TestCase):
         return acquire("2026-01-01T00:00:00", "2026-01-02T00:00:00", self.target)
 
     @patch("scripts.phase3_download_find_tender.urlopen")
+    def test_rejects_invalid_date_windows_before_network(self, mock_urlopen):
+        invalid = (
+            ("2026-01-01", "2026-01-02T00:00:00"),
+            ("2026-01-02T00:00:00", "2026-01-01T00:00:00"),
+            ("2026-01-01T00:00:00", "2026-01-09T00:00:00"),
+        )
+        for start, end in invalid:
+            with self.subTest(start=start, end=end), self.assertRaises(ValueError):
+                acquire(start, end, self.target)
+        mock_urlopen.assert_not_called()
+        self.assertFalse(self.target.exists())
+
+    @patch("scripts.phase3_download_find_tender.urlopen")
     def test_valid_bounded_release_is_saved(self, mock_urlopen):
         payload = {"publisher": {"uri": "https://example.org/test"},
                    "license": "https://example.org/license",
