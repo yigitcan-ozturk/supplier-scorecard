@@ -1,0 +1,92 @@
+{
+  "schema": "phase3.synthetic-comparability.v1",
+  "synthetic": true,
+  "notice": "All names, dimensions, currencies, prices, and terms are invented. This fixture is NOT extracted from private supplier quotations and is NOT evidence of a completed pilot.",
+  "requirement": {
+    "currency": "GBP",
+    "quantity": 3,
+    "minimum_width_mm": 850,
+    "minimum_extended_length_mm": 6000,
+    "maximum_item_weight_kg": 25,
+    "delivery_required": true
+  },
+  "offers": [
+    {
+      "id": "SYN-A",
+      "unit_price_gbp": 3200,
+      "quantity": 3,
+      "delivery_gbp": 400,
+      "width_mm": 900,
+      "extended_length_mm": 6200,
+      "max_item_weight_kg": 30,
+      "payment_terms": "30 days from invoice",
+      "payment_risk_numeric": null,
+      "vendor_risk_numeric": null
+    },
+    {
+      "id": "SYN-B",
+      "unit_price_gbp": 2800,
+      "quantity": 3,
+      "delivery_gbp": null,
+      "width_mm": 900,
+      "extended_length_mm": 6200,
+      "max_item_weight_kg": 30,
+      "payment_terms": "30 days from invoice",
+      "payment_risk_numeric": null,
+      "vendor_risk_numeric": null
+    },
+    {
+      "id": "SYN-C",
+      "unit_price_gbp": 2700,
+      "quantity": 3,
+      "delivery_gbp": 350,
+      "width_mm": 750,
+      "extended_length_mm": 6200,
+      "max_item_weight_kg": 30,
+      "payment_terms": "30 days from invoice",
+      "payment_risk_numeric": null,
+      "vendor_risk_numeric": null
+    },
+    {
+      "id": "SYN-D",
+      "unit_price_gbp": 3100,
+      "quantity": 3,
+      "delivery_gbp": 250,
+      "width_mm": 900,
+      "extended_length_mm": 6200,
+      "max_item_weight_kg": 30,
+      "payment_terms": "subject to approval",
+      "payment_risk_numeric": null,
+      "vendor_risk_numeric": null
+    }
+  ],
+  "expected_review_flags": {
+    "SYN-A": [
+      "VENDOR_RISK_UNAVAILABLE",
+      "PAYMENT_RISK_NOT_YET_DERIVED"
+    ],
+    "SYN-B": [
+      "DELIVERY_COST_UNKNOWN",
+      "LANDED_COST_INCOMPARABLE",
+      "VENDOR_RISK_UNAVAILABLE",
+      "PAYMENT_RISK_NOT_YET_DERIVED"
+    ],
+    "SYN-C": [
+      "DIMENSIONAL_DEVIATION_REQUIRES_ENGINEERING_APPROVAL",
+      "VENDOR_RISK_UNAVAILABLE",
+      "PAYMENT_RISK_NOT_YET_DERIVED"
+    ],
+    "SYN-D": [
+      "AMBIGUOUS_PAYMENT_TERMS",
+      "FAIL_CLOSED_UNTIL_VALID_RISK_SIGNAL",
+      "VENDOR_RISK_UNAVAILABLE"
+    ]
+  },
+  "expected_known_landed_cost_gbp": {
+    "SYN-A": 10000,
+    "SYN-B": null,
+    "SYN-C": 8450,
+    "SYN-D": 9550
+  },
+  "acceptance": "Review flags are expected assertions for future adapters/tests, not claims of existing CLI output."
+}

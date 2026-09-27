@@ -1,0 +1,54 @@
+name: Phase 3 Public OCDS Acquisition
+
+# Manual-only: external publisher accessibility and licensing must be reviewed.
+on:
+  workflow_dispatch:
+    inputs:
+      updated_from:
+        description: 'Publisher update-window start (YYYY-MM-DDTHH:MM:SS)'
+        required: true
+        default: '2026-09-01T00:00:00'
+      updated_to:
+        description: 'Publisher update-window end (YYYY-MM-DDTHH:MM:SS)'
+        required: true
+        default: '2026-09-02T00:00:00'
+
+permissions:
+  contents: read
+
+jobs:
+  public-ocds-acquisition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download bounded publisher package (fail closed)
+        env:
+          START: ${{ inputs.updated_from }}
+          END: ${{ inputs.updated_to }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/phase3-ocds"
+          python scripts/phase3_download_find_tender.py \
+            --from-date "$START" --to-date "$END" \
+            --output "$RUNNER_TEMP/phase3-ocds/raw.json"
+      - name: Extract source evidence and field coverage
+        run: |
+          python scripts/phase3_extract_ocds.py \
+            "$RUNNER_TEMP/phase3-ocds/raw.json" \
+            "$RUNNER_TEMP/phase3-ocds/source_manifest.jsonl" \
+            "$RUNNER_TEMP/phase3-ocds/public_records.jsonl"
+          python scripts/phase3_coverage_report.py \
+            "$RUNNER_TEMP/phase3-ocds/public_records.jsonl" \
+            "$RUNNER_TEMP/phase3-ocds/coverage_report.json"
+      - name: Upload public-source evidence for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-public-ocds-review
+          path: |
+            ${{ runner.temp }}/phase3-ocds/source_manifest.jsonl
+            ${{ runner.temp }}/phase3-ocds/coverage_report.json
+          retention-days: 7
+          if-no-files-found: error
